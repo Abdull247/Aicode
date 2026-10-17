@@ -125,19 +125,7 @@ class DeviceRootFileAccess @Inject constructor(
         if (stdin == null) pb.redirectInput(STDIN_FROM_DEV_NULL)
         val process = pb.start()
         val timedOut = AtomicBoolean(false)
-        val watchdog = Thread {
-            try {
-                Thread.sleep(timeoutMs)
-            } catch (_: InterruptedException) {
-                return@Thread
-            }
-            if (process.isAlive) {
-                timedOut.set(true)
-                runCatching { process.destroy() }
-                Thread.sleep(200)
-                if (process.isAlive) runCatching { process.destroyForcibly() }
-            }
-        }
+        val watchdog = Thread({ runShWatchdog(process, timeoutMs, timedOut) }, WATCHDOG_THREAD_NAME)
         watchdog.isDaemon = true
         watchdog.start()
         try {
@@ -455,4 +443,33 @@ class DeviceRootFileAccess @Inject constructor(
             else -> path
         }
     }
+}
+
+/** 看门狗 destroy 后等待进程自行退出的宽限时间。 */
+private const val WATCHDOG_GRACE_MS = 200L
+
+/** 看门狗线程名：崩溃报告里可读，不再是一串 Thread-N。 */
+private const val WATCHDOG_THREAD_NAME = "RootShWatchdog"
+
+/**
+ * `su -c` 看门狗线程体（从 [DeviceRootFileAccess.sh] 提取为文件级函数，便于单测复现中断竞态）。
+ *
+ * 时序：睡满 [timeoutMs] → 进程仍活着则判超时并 `destroy` → 宽限 [WATCHDOG_GRACE_MS] 后 `destroyForcibly`。
+ *
+ * 中断安全性（v1.0.4 真机崩溃根因）：主流程正常结束时会在 finally `interrupt()` 本线程，
+ * 中断完全可能落在「判超时之后、宽限 sleep 之前/之中」——**两次 sleep 都必须接住
+ * InterruptedException**。旧代码只保护了第一次，第二次裸奔，异常逃出 `run()` 后被默认
+ * 未捕获处理器变成整 App 崩溃（DEVICE_ROOT 模式开抽屉列目录即可复现）。
+ */
+internal fun runShWatchdog(process: Process, timeoutMs: Long, timedOut: AtomicBoolean) {
+    try {
+        Thread.sleep(timeoutMs)
+    } catch (_: InterruptedException) {
+        return
+    }
+    if (!process.isAlive) return
+    timedOut.set(true)
+    runCatching { process.destroy() }
+    runCatching { Thread.sleep(WATCHDOG_GRACE_MS) }
+    if (process.isAlive) runCatching { process.destroyForcibly() }
 }
