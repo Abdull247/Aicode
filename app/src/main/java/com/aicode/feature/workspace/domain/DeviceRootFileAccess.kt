@@ -37,7 +37,8 @@ import javax.inject.Singleton
  *   读取经 stdout 回传，写入经 stdin 管道喂给 `base64 -d`（不受 argv 长度上限约束）；
  * - 脚本约定退出码：0 成功 / 2 不存在（[NoSuchFileException]）/ 3 已存在（[FileAlreadyExistsException]）/
  *   4 超过读取上限（[RemoteOutputTooLargeException]）/ 5 写入后长度校验失败 / 其它 [IOException]；
- * - 已知限制：文件名含换行或制表符时目录列举会解析异常（与现有 `ls | xargs` 类代码同级限制）；
+ * - 已知限制：旧实现按行/按 tab 切分目录列举输出，文件名含换行或制表符会解析异常；
+ *   现已改为 `find -printf` + NUL 分隔（见 [DeviceRootListing]），不再有该限制；
  *   读写上限 [MAX_READ_BYTES]/[MAX_WRITE_BYTES]（内容需整体过内存）。
  */
 @Singleton
@@ -280,35 +281,14 @@ class DeviceRootFileAccess @Inject constructor(
 
     override fun listFiles(path: String): List<FileEntry> {
         val real = resolve(path)
-        // cd 进目标目录后遍历通配：名字不含路径分隔符，协议简单；逐项一次 stat 取 大小|时间|权限。
-        // 空目录/无匹配时通配保留字面量，[ -e ]/[ -L ] 过滤掉。
-        val script = "cd ${q(real)} 2>/dev/null || exit 2; " +
-            "for f in * .[!.]* ..?*; do " +
-            "[ -e \"\$f\" ] || [ -L \"\$f\" ] || continue; " +
-            "if [ -d \"\$f\" ]; then t=d; elif [ -f \"\$f\" ]; then t=f; else t=o; fi; " +
-            "sm=\$(stat -c '%s|%Y|%A' \"\$f\" 2>/dev/null); " +
-            "printf '%s\\t%s\\t%s\\n' \"\$t\" \"\${sm:-0|0|-}\" \"\$f\"; " +
-            "done"
-        val r = sh(script, timeoutMs = LIST_TIMEOUT_MS)
-        r.throwForError(path)
-        return r.output.lineSequence()
-            .filter { it.isNotEmpty() }
-            .mapNotNull { line ->
-                val parts = line.split('\t')
-                if (parts.size < 3) return@mapNotNull null
-                val name = parts.subList(2, parts.size).joinToString("\t")
-                if (name.isEmpty()) return@mapNotNull null
-                val meta = parts[1].split('|')
-                FileEntry(
-                    name = name,
-                    isDirectory = parts[0] == "d",
-                    size = meta.getOrNull(0)?.toLongOrNull() ?: 0L,
-                    lastModified = (meta.getOrNull(1)?.toLongOrNull() ?: 0L) * 1000,
-                    localFile = File(real, name),
-                    permissions = meta.getOrNull(2)?.takeIf { it.length >= 4 }?.substring(1, 4) ?: "rwx"
-                )
-            }
-            .toList()
+        // 快路径：一条 find -printf 拿回全部属性（单次 su fork，见 DeviceRootListing）。
+        val r = sh(DeviceRootListing.findScript(real), timeoutMs = LIST_TIMEOUT_MS)
+        if (r.exitCode == 0) return DeviceRootListing.parseFindOutput(r.output, real)
+        // 兜底：find -printf 不可用（老旧 toybox）时退回旧逐项 stat 脚本，行为不变、只是慢。
+        FileLogger.d(TAG, "find -printf 列举不可用(exit=${r.exitCode})，回退旧脚本: $path")
+        val legacy = sh(DeviceRootListing.legacyScript(real), timeoutMs = LIST_TIMEOUT_MS)
+        legacy.throwForError(path)
+        return DeviceRootListing.parseLegacyOutput(legacy.output, real)
     }
 
     override fun listFilesRecursive(path: String, maxDepth: Int): List<String> {

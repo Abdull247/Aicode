@@ -54,6 +54,7 @@ import com.aicode.feature.agent.domain.subagent.AgentDefinition
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionRepository
 import com.aicode.feature.agent.domain.subagent.SubAgentEvent
 import com.aicode.feature.agent.domain.subagent.SubAgentEventBus
+import com.aicode.core.watch.FileChangeBatch
 import com.aicode.core.watch.FileChangeHub
 import com.aicode.core.watch.asDirtySignal
 import com.aicode.feature.agent.domain.subagent.SubAgentEventType
@@ -62,10 +63,12 @@ import com.aicode.feature.terminal.domain.TabFinishedEvent
 import com.aicode.feature.terminal.domain.TerminalKeepaliveService
 import com.aicode.feature.terminal.domain.TerminalSessionManager
 import com.aicode.feature.terminal.domain.takeTailLines
+import com.aicode.feature.workspace.domain.DirectoryListingCache
 import com.aicode.feature.workspace.domain.FileAccessProvider
 import com.aicode.feature.workspace.domain.FileEntry
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.domain.isValidFileEntryName
+import com.aicode.feature.workspace.domain.planBrowseInvalidation
 import com.aicode.feature.agent.domain.workflow.AgentEvent
 import com.aicode.feature.agent.domain.tool.ToolPermissionManager
 import com.aicode.feature.agent.domain.tool.ToolRegistry
@@ -322,7 +325,10 @@ class AIAgentViewModel @Inject constructor(
     fun setWorkspace(path: String) {
         if (path.isBlank() || _currentWorkspace.value == path) return
         _currentWorkspace.value = path
-        // 切到新工作区：恢复该工作区上次持久化的展开状态（无记录则只展开根）。
+        // 切到新工作区：容器路径同名但宿主目录不同，目录列举缓存与 gitignore 规则全部作废。
+        dirListingCache.clear()
+        gitignoreCache = null
+        // 恢复该工作区上次持久化的展开状态（无记录则只展开根）。
         _expandedPaths.value = loadExpansion(path)
         // 搜索限定当前工作区，切区后旧结果无意义，一并清空。
         _chatSearchQuery.value = ""
@@ -477,15 +483,33 @@ class AIAgentViewModel @Inject constructor(
     private val _browseRefresh = MutableStateFlow(0)
 
     /**
+     * 目录列举缓存（容器路径 → 条目快照）：让「展开→折叠→再展开」与未受影响的目录零 IO。
+     * 失效完全由变更事件驱动（见 [applyBrowseInvalidation]）；工作区切换与手动刷新时全清。
+     */
+    private val dirListingCache = DirectoryListingCache()
+
+    /** 根 `.gitignore` 解析结果缓存，null 表示未缓存；由 gitignoreTouched 失效与工作区切换清除。 */
+    private var gitignoreCache: List<String>? = null
+
+    /**
      * 扁平化的可见文件树。listFiles 在本地是阻塞 IO、远程是网络调用，必须跑 IO 调度器。
      * 监听工作区根与所有已展开目录：任一发生变动（不限 AI，终端与其它 App 同样算）或手动刷新都会重建树。
      * 只监听展开中的目录、不递归整棵树，避免大仓库开出大量 inotify 句柄。
+     *
+     * 重建不等于重读：树只从 [dirListingCache] 组装，未命中才真的 listFiles；inotify 单层语义
+     * （direct children）正好覆盖「已展开目录列表会变」的全部情形，故这里显式关掉 FileChangeHub 的
+     * 快照轮询兜底（fallbackPoll=false）——每 2 秒对每个已展开目录轮询 listFiles+逐项 stat 是持续的
+     * IO 税，而抽屉树对深层递归变更本来就不敏感。ROOT/SSH 模式下宿主 watch 本就不可用，靠手动刷新兜底。
      */
     val browseState: StateFlow<FileBrowseState> = _expandedPaths
         .flatMapLatest { expanded ->
             val watched = expanded + WorkspacePathMapper.CONTAINER_ROOT
             val triggers = merge(
-                watched.map { fileChangeHub.watchWorkspace(it).asDirtySignal() }.merge().debounce(BROWSE_DEBOUNCE_MS),
+                watched.map {
+                    fileChangeHub.watchWorkspace(it, fallbackPoll = false)
+                        .onEach { batch -> applyBrowseInvalidation(batch) }
+                        .asDirtySignal()
+                }.merge().debounce(BROWSE_DEBOUNCE_MS),
                 // drop(1) 丢掉 StateFlow 重建时的当前值，否则刚展开就会多读一次
                 _browseRefresh.drop(1).map { }
             )
@@ -500,14 +524,32 @@ class AIAgentViewModel @Inject constructor(
         .onEach { _expandingPath.value = null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FileBrowseState.Loading)
 
+    /**
+     * 按变更批次对 [dirListingCache] 与 gitignore 规则做精准失效。防抖窗口内每批都立即执行，
+     * 保证重建组装时缓存已是失效后的状态（顺序上 onEach 早于下游 collect 的重建）。
+     */
+    private fun applyBrowseInvalidation(batch: FileChangeBatch) {
+        val plan = planBrowseInvalidation(batch, WorkspacePathMapper.CONTAINER_ROOT)
+        if (plan.fullRefresh) {
+            dirListingCache.clear()
+            gitignoreCache = null
+            return
+        }
+        plan.relistDirs.forEach { dirListingCache.invalidate(it) }
+        plan.dropTrees.forEach { dirListingCache.invalidateTree(it) }
+        if (plan.gitignoreTouched) gitignoreCache = null
+    }
+
     /** 读取工作区根并按 [expanded] 递归展开，产出扁平的可见节点列表；根读取失败则整体报错。 */
     private fun buildBrowseTree(expanded: Set<String>): FileBrowseState {
+        val startedAt = System.currentTimeMillis()
+        listingCounter.set(0)
         val root = WorkspacePathMapper.CONTAINER_ROOT
-        val rootEntries = runCatching { fileAccess.listFiles(root) }.getOrElse { e ->
-            FileLogger.w(TAG, "列目录失败: $root", e)
-            return FileBrowseState.Error(e.message)
+        val rootEntries = listDirCached(root) ?: run {
+            FileLogger.w(TAG, "列目录失败: $root")
+            return FileBrowseState.Error("无法读取工作区根目录")
         }
-        val ignorePatterns = loadRootGitignore(root)
+        val ignorePatterns = cachedRootGitignore(root)
         val rootExpanded = root in expanded
         val nodes = mutableListOf<FileTreeNode>()
         nodes += FileTreeNode(
@@ -520,19 +562,45 @@ class AIAgentViewModel @Inject constructor(
         if (rootExpanded) {
             appendBrowseChildren(root, rootEntries, depth = 1, expanded = expanded, ignorePatterns = ignorePatterns, relParts = emptyList(), out = nodes)
         }
+        val listed = listingCounter.get()
+        FileLogger.d(TAG, "文件树重建: 命中缓存目录=${dirListingCache.size()} 实列目录=$listed 节点=${nodes.size} 耗时=${System.currentTimeMillis() - startedAt}ms")
         return FileBrowseState.Success(nodes)
     }
 
-    /** 读工作区根 .gitignore（本地/远程均可）；去空行/注释/否定行，读不到则空。仅根 .gitignore，不处理嵌套。 */
-    private fun loadRootGitignore(root: String): List<String> = runCatching {
-        val path = "$root/.gitignore"
-        if (!fileAccess.exists(path)) return emptyList()
-        fileAccess.readFile(path).lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("!") }
-            .map { it.removeSuffix("/") }
-            .toList()
-    }.getOrDefault(emptyList())
+    /** 每次重建从 0 计数，仅用于诊断日志（见 [buildBrowseTree]）；按线程隔离，并发重建互不干扰。 */
+    private val listingCounter = ThreadLocal.withInitial { 0 }
+
+    /**
+     * 带缓存的目录列举：命中直接返回快照；未命中才真 listFiles 并回填缓存。
+     * 列举失败返回 null 且**不入缓存**（下次重建自然重试），调用方决定错误如何呈现。
+     */
+    private fun listDirCached(path: String): List<FileEntry>? {
+        dirListingCache.get(path)?.let { return it }
+        val entries = runCatching { fileAccess.listFiles(path) }.getOrNull() ?: return null
+        dirListingCache.put(path, entries)
+        listingCounter.set(listingCounter.get() + 1)
+        return entries
+    }
+
+    /**
+     * 读工作区根 .gitignore（本地/远程均可）；去空行/注释/否定行，读不到则空。仅根 .gitignore，不处理嵌套。
+     * 结果按失效缓存：变更批次触及根 .gitignore（[applyBrowseInvalidation]）、切换工作区、
+     * 手动刷新时清除；避免每次重建都 exists+readFile 一遍（ROOT 模式下这是两次 su fork）。
+     */
+    private fun cachedRootGitignore(root: String): List<String> {
+        gitignoreCache?.let { return it }
+        val patterns = runCatching {
+            val path = "$root/.gitignore"
+            if (!fileAccess.exists(path)) return emptyList()
+            fileAccess.readFile(path).lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("!") }
+                .map { it.removeSuffix("/") }
+                .toList()
+        }.getOrDefault(emptyList())
+        gitignoreCache = patterns
+        return patterns
+    }
 
     private fun appendBrowseChildren(
         parent: String,
@@ -555,13 +623,21 @@ class AIAgentViewModel @Inject constructor(
                 out += FileTreeNode(entry, path, depth, isRoot = false, isExpanded = false, ignored = ignored)
                 continue
             }
-            val children = runCatching { fileAccess.listFiles(path) }.getOrNull()
+            val children = listDirCached(path)
             out += FileTreeNode(entry, path, depth, isRoot = false, isExpanded = true, hasError = children == null, ignored = ignored)
             if (children != null) appendBrowseChildren(path, children, depth + 1, expanded, ignorePatterns, parts, out)
         }
     }
 
+    /** 手动全量刷新：清目录缓存后触发重建，保证展示与磁盘一致（远程模式唯一的事实来源）。 */
     fun refreshBrowse() {
+        dirListingCache.clear()
+        gitignoreCache = null
+        _browseRefresh.value++
+    }
+
+    /** 触发一次重建但不清缓存（供写操作后精准失效场景；用户可见的全量刷新走 [refreshBrowse]）。 */
+    private fun rebuildBrowseAfterWrite() {
         _browseRefresh.value++
     }
 
@@ -597,7 +673,15 @@ class AIAgentViewModel @Inject constructor(
                     .onFailure { FileLogger.w(TAG, "文件操作失败", it) }
                     .getOrDefault(false)
             }
-            if (success) refreshBrowse()
+            if (success) {
+                // 精准失效：只让本次操作涉及的目录重读（ROOT/SSH 没有 inotify 兜底时尤其重要），
+                // 其余缓存原样保留——一次小操作不再引发整树重列。
+                busyPaths.forEach { path ->
+                    dirListingCache.invalidate(path.substringBeforeLast('/', ""))
+                    dirListingCache.invalidateTree(path)
+                }
+                rebuildBrowseAfterWrite()
+            }
             onResult(success)
         } finally {
             if (busyPaths.isNotEmpty()) _fileOpPaths.value = _fileOpPaths.value - busyPaths
