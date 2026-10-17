@@ -620,7 +620,11 @@ class StatefulAgentWorkflow @Inject constructor(
                         try {
                             // 发送前按实际模型的视觉能力处理图片（同 execute 路径）。
                             val supportsVision = activeModelSupportsVision(currentContext.sessionId)
-                            val messagesToSend = sanitizeImagesForModel(compactedMessages, supportsVision)
+                            val messagesToSend = withSkillHint(
+                                sanitizeImagesForModel(compactedMessages, supportsVision),
+                                currentContext,
+                                currentTools
+                            )
                             providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                 when (chunk) {
                                     is AIStreamChunk.TextDelta -> {
@@ -1009,6 +1013,36 @@ class StatefulAgentWorkflow @Inject constructor(
                     if (msg.images.isEmpty()) msg else msg.copy(images = emptyList())
                 is AgentMessage.AssistantMessage -> msg
             }
+        }
+    }
+
+    /**
+     * 每轮注入「相关技能」提醒（对标 Claude Code 的 "Skills relevant to your task:"）：
+     * 系统提示里的技能清单按会话只注入一次，模型跑几轮工具后就淡忘了；在本轮请求发出前，
+     * 按最新 user 消息把最相关的几个技能连描述再推到他眼前，提高 `loadSkill` 调用率。
+     *
+     * 只追加到本轮最新 user 消息末尾、不落库：系统提示与历史消息逐字节不变，
+     * provider 前缀缓存照常命中（KV Cache 友好）。
+     * 仅主代理注入：子代理的工具白名单可能不含 loadSkill，其提示词也未必注入了技能清单。
+     * 首次技能扫描已在系统提示构建时完成并缓存，这里正常情况下是纯内存计算；
+     * 防御性切 IO 线程，避免真机 ROOT 通道下的阻塞 IO 卡住主线程。
+     */
+    private suspend fun withSkillHint(
+        messages: List<AgentMessage>,
+        ctx: AgentContext,
+        tools: List<AgentTool>
+    ): List<AgentMessage> {
+        if (ctx.agentDefinition != null) return messages
+        if (tools.none { it.name == "loadSkill" }) return messages
+        val lastUserIndex = messages.indexOfLast { it is AgentMessage.UserMessage }
+        if (lastUserIndex < 0) return messages
+        val lastUser = messages[lastUserIndex] as AgentMessage.UserMessage
+        if (lastUser.content.isBlank()) return messages
+        val hint = withContext(Dispatchers.IO) {
+            runCatching { promptProvider.buildSkillHint(ctx, lastUser.content) }.getOrNull()
+        } ?: return messages
+        return messages.toMutableList().apply {
+            this[lastUserIndex] = lastUser.copy(content = lastUser.content.trimEnd() + "\n\n" + hint)
         }
     }
 

@@ -384,13 +384,15 @@ object AgentModule {
             register("viewImage", viewImageTool)
             register("writeFile", writeFileTool)
             register("editFile", editFileTool)
+            // loadSkill 提前到文件工具组之后、Bash 之前：注册顺序即工具 schema 顺序，
+            // 模型对清单前段的工具更敏感（本机实测 loadSkill 原在第 12 位，239 次调用 0 命中）。
+            register("loadSkill", loadSkillTool)
             register("generateImage", generateImageTool)
             register("Bash", executeCommandTool)
             register("Shizuku", shizukuTool)
             register("terminal", terminalSessionTool)
             register("list", listFilesTool)
             register("search", searchCodeTool)
-            register("loadSkill", loadSkillTool)
             register("askUserQuestion", askUserQuestionTool)
             register("manageMcp", manageMcpTool)
             register("websearch", webSearchTool)

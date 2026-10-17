@@ -6,7 +6,13 @@ import org.yaml.snakeyaml.Yaml
 
 object SkillParser {
     private const val TAG = "SkillParser"
-    private const val MAX_DESC_CHARS = 500
+
+    /**
+     * 单条描述上限。对标 Claude Code 的 250 字符：描述只在系统提示清单里承担「何时用我」的
+     * 索引职责，写太长只会稀释清单（118 个技能时光描述就可能占上万字符），完整执行步骤属于
+     * `loadSkill` 加载后才该出现的正文。用户在设置页写更长的描述时不报错，只是读取时截断。
+     */
+    private const val MAX_DESC_CHARS = 250
     private const val SKILL_FILE = "SKILL.md"
     private const val CLAUDE_FILE = "CLAUDE.md"
 

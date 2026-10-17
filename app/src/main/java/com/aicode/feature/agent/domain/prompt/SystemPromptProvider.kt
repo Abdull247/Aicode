@@ -6,6 +6,9 @@ import com.aicode.feature.agent.domain.container.ContainerInstaller
 import com.aicode.feature.agent.domain.memory.MemoryRepository
 import com.aicode.feature.agent.domain.memory.MemoryScope
 import com.aicode.feature.agent.domain.model.AgentContext
+import com.aicode.feature.agent.domain.skill.Skill
+import com.aicode.feature.agent.domain.skill.SkillListFormatter
+import com.aicode.feature.agent.domain.skill.SkillRelevanceMatcher
 import com.aicode.feature.agent.domain.skill.SkillRepository
 import com.aicode.feature.agent.domain.subagent.AgentDefinition
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionRepository
@@ -51,29 +54,52 @@ class SystemPromptProvider @Inject constructor(
     }
 
     private inner class ActiveSkillsSource : PromptSource {
+        // 清单被预算降级时只记一次日志：build() 每轮 LLM 调用都会走到，逐次打会刷屏。
+        @Volatile private var degradationLogged = false
+
         // 会话级缓存：同一 (sessionId, projectRoot) 内只扫一次磁盘，保持 system prompt 稳定以命中 KV 缓存；
-        // 新开会话 / 切换工作区 / 重启 App 时缓存自然失效重建。空内容用 "" 占位以区分"未缓存"。
-        private val cachedByKey = ConcurrentHashMap<SourceCacheKey, String>()
+        // 新开会话 / 切换工作区 / 重启 App 时缓存自然失效重建。扫描失败返回空列表且不缓存，下轮重试。
+        private val cachedListsByKey = ConcurrentHashMap<SourceCacheKey, List<Skill>>()
+
+        /** 启用技能列表快照：系统提示清单与每轮相关技能提醒共用，避免重复扫盘。 */
+        fun skills(ctx: AgentContext): List<Skill> {
+            val key = SourceCacheKey(ctx.sessionId, ctx.projectRoot)
+            cachedListsByKey[key]?.let { return it }
+            val skills = try {
+                skillRepository.listSkills()
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "扫描技能失败: ${e.message}", e)
+                return emptyList()
+            }
+            cachedListsByKey[key] = skills
+            trimIfNeeded()
+            return skills
+        }
 
         override fun build(ctx: AgentContext): String? {
-            val key = SourceCacheKey(ctx.sessionId, ctx.projectRoot)
-            val cached = cachedByKey[key]
-            if (cached != null) return cached.ifEmpty { null }
-            val skills = try { skillRepository.listSkills() } catch (e: Exception) { return null }
-            if (skills.isEmpty()) {
-                cachedByKey[key] = ""
-                return null
-            }
-
-            val list = skills.joinToString("\n") { "- ${it.name}: ${it.description.ifBlank { "（无描述）" } }" }
-            val content = list
-            cachedByKey[key] = content
-            trimIfNeeded()
+            val skills = skills(ctx)
+            if (skills.isEmpty()) return null
+            val content = SkillListFormatter.format(skills)
+            if (content.isEmpty()) return null
+            logDegradationOnce(skills, content)
             return content
         }
 
         private fun trimIfNeeded() {
-            if (cachedByKey.size > SOURCE_CACHE_LIMIT) cachedByKey.clear()
+            if (cachedListsByKey.size > SOURCE_CACHE_LIMIT) cachedListsByKey.clear()
+        }
+
+        private fun logDegradationOnce(skills: List<Skill>, formatted: String) {
+            if (degradationLogged) return
+            // 行数没少（每个技能都带描述列出来了）说明没触发降级，不打扰日志。
+            if (formatted.lines().size >= skills.size) return
+            degradationLogged = true
+            val fullChars = skills.sumOf { it.name.length + it.description.length + 4 }
+            FileLogger.i(
+                TAG,
+                "技能清单受预算降级: ${skills.size} 个技能，完整清单约 $fullChars 字符，" +
+                    "实际注入 ${formatted.length} 字符（预算 ${SkillListFormatter.DEFAULT_CHAR_BUDGET}）"
+            )
         }
     }
 
@@ -257,6 +283,22 @@ class SystemPromptProvider @Inject constructor(
 
         // 4. 压缩空清单展开留下的多余空行；稳定基线在前、动态内容集中在末尾片段，均利于 KV Cache。
         return collapseBlankLines(staticContent)
+    }
+
+    /**
+     * 每轮「相关技能」提醒（对标 Claude Code 的 "Skills relevant to your task:"）。
+     *
+     * 系统提示里的技能清单按会话只注入一次，模型跑几轮工具后就淡忘了；在本轮请求发出前，
+     * 按用户最新输入把最相关的几个技能连描述再推到他眼前，是提高 `loadSkill` 调用率的关键一招。
+     * 命中时返回一小段文本，由调用方追加到本轮最新 user 消息末尾——不落库、不改系统提示，
+     * 系统提示与历史消息逐字节不变，provider 前缀缓存照常命中（KV Cache 友好）。
+     * 未命中 / 无技能返回 null。
+     */
+    fun buildSkillHint(ctx: AgentContext, latestUserText: String): String? {
+        if (latestUserText.isBlank()) return null
+        val skills = activeSkillsSource.skills(ctx)
+        if (skills.isEmpty()) return null
+        return SkillRelevanceMatcher.buildHint(skills, latestUserText)
     }
 
     /**

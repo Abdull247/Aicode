@@ -16,9 +16,13 @@ import javax.inject.Inject
 /**
  * 让 AI 按需加载一个技能的完整指令正文。
  *
- * 系统提示里只注入了各 skill 的 name+description 清单；AI 判断某个 skill 适用时，调用本工具拿到
+ * 系统提示里只注入了各 skill 的 name+description 清单（受预算限制可能省略部分）；AI 判断某个 skill 适用时，调用本工具拿到
  * SKILL.md 正文（可能含「先 apk add python3，再 python ~/.aicode/skills/<name>/x.py」之类的执行步骤），
  * 随后用 read_file/execute_command 等工具按正文行事。skill 目录在当前执行环境为 `~/.aicode/skills/<name>/`。
+ *
+ * 描述措辞对标 Codex/Claude Code 的硬性要求（本机实测：清单里 118 个对口技能，239 次工具调用中
+ * loadSkill 为 0——软措辞「适用时使用」等于没有约束）：
+ * 必须先加载再行动、宣布用了哪个及原因、跳过明显适配的要说理由。
  */
 class LoadSkillTool @Inject constructor(
     private val skillRepository: SkillRepository
@@ -30,7 +34,10 @@ class LoadSkillTool @Inject constructor(
     override val name = "loadSkill"
     override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG)
     override val description =
-        "加载指定技能的完整指令正文。当系统提示「可用技能」清单中的技能适用于当前任务时使用。"
+        "加载指定技能的完整指令正文（SKILL.md）。当任务与「可用技能」清单中任何技能相关时，" +
+            "你必须先调用本工具加载该技能，并在本轮严格遵循其正文，再选择其它工具动手；" +
+            "开始行动前声明你使用了哪个技能及原因；若跳过了一个明显适配的技能，先说明原因。" +
+            "用户以 `/技能名` 触发时正文已注入本轮，无需重复加载。"
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "skill_name" to ToolParameter(
