@@ -49,7 +49,7 @@ import com.aicode.feature.agent.domain.workflow.AgentWorkflow
 import com.aicode.feature.agent.domain.tool.ToolPermissionManager
 import com.aicode.feature.agent.domain.permission.ToolPermissionPolicyEngine
 import com.aicode.feature.agent.domain.tool.ToolRegistry
-import com.aicode.feature.agent.domain.tool.ToolOutputStore
+import com.aicode.feature.agent.domain.tool.ToolInvoker
 import com.aicode.feature.settings.data.remote.ModelMetadataService
 import com.aicode.feature.terminal.domain.DelegatingTerminalSessionProvider
 import com.aicode.feature.terminal.domain.RemoteTerminalSessionManager
@@ -414,6 +414,7 @@ object AgentModule {
     @Singleton
     fun provideAgentWorkflow(
         toolRegistry: ToolRegistry,
+        toolInvoker: ToolInvoker,
         aiProviderRepository: AIProviderRepository,
         openAIApi: OpenAIApi,
         anthropicApi: AnthropicApi,
@@ -423,7 +424,6 @@ object AgentModule {
         policyEngine: ToolPermissionPolicyEngine,
         contextCompactor: ContextCompactor,
         planApprovalManager: PlanApprovalManager,
-        toolOutputStore: ToolOutputStore,
         modelMetadataService: ModelMetadataService,
         compactionModelSettingsRepository: CompactionModelSettingsRepository,
         titleModelSettingsRepository: TitleModelSettingsRepository,
@@ -442,6 +442,7 @@ object AgentModule {
     ): AgentWorkflow {
         return StatefulAgentWorkflow(
             toolRegistry,
+            toolInvoker,
             aiProviderRepository,
             openAIApi,
             anthropicApi,
@@ -451,7 +452,6 @@ object AgentModule {
             policyEngine,
             contextCompactor,
             planApprovalManager,
-            toolOutputStore,
             modelMetadataService,
             compactionModelSettingsRepository,
             titleModelSettingsRepository,

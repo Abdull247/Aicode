@@ -35,8 +35,9 @@ import com.aicode.feature.agent.domain.tool.ToolPermissionManager
 import com.aicode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.aicode.feature.agent.domain.tool.ToolRegistry
 import com.aicode.feature.agent.domain.tool.ToolResult
-import com.aicode.feature.agent.domain.tool.ToolOutputStore
-import com.aicode.feature.agent.domain.tool.ToolStreamEvent
+import com.aicode.feature.agent.domain.tool.ToolInvoker
+import com.aicode.feature.agent.domain.tool.ToolRunResult
+
 import com.aicode.feature.agent.domain.tool.modelToolResultText
 import com.aicode.feature.agent.domain.tool.toTransportString
 import com.aicode.feature.agent.presentation.AgentAttachment
@@ -73,11 +74,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -93,6 +92,7 @@ import javax.inject.Inject
  */
 class StatefulAgentWorkflow @Inject constructor(
     private val toolRegistry: ToolRegistry,
+    private val toolInvoker: ToolInvoker,
     private val aiProviderRepository: AIProviderRepository,
     private val openAIApi: OpenAIApi,
     private val anthropicApi: AnthropicApi,
@@ -102,7 +102,6 @@ class StatefulAgentWorkflow @Inject constructor(
     private val policyEngine: ToolPermissionPolicyEngine,
     private val contextCompactor: ContextCompactor,
     private val planApprovalManager: PlanApprovalManager,
-    private val toolOutputStore: ToolOutputStore,
     private val modelMetadataService: ModelMetadataService,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
     private val titleModelSettingsRepository: TitleModelSettingsRepository,
@@ -133,8 +132,6 @@ class StatefulAgentWorkflow @Inject constructor(
 
     private companion object {
         const val TAG = "StatefulAgentWorkflow"
-        const val LIVE_TAIL_CHARS = 4_000
-        const val PROGRESS_INTERVAL_MS = 250L
         const val USER_REJECTED_CODE = "USER_REJECTED"
         const val TITLE_GENERATOR_FILE = "agent/title-generator.md"
         const val TITLE_MAX_CHARS = 50
@@ -196,14 +193,6 @@ class StatefulAgentWorkflow @Inject constructor(
         val approved: Boolean,
         val denyReason: String = "用户拒绝执行该工具",
         val errorCode: String = "USER_REJECTED"
-    )
-
-    private data class ToolRunResult(
-        val raw: String,
-        val isError: Boolean,
-        /** 仅 sendFile 等展示型工具：随结果附带的文件卡片元数据，供 UI 渲染，不回放进模型上下文。 */
-        val attachments: List<AgentAttachment> = emptyList(),
-        val images: List<AgentImage> = emptyList()
     )
 
     /** 批量工具执行结果：携带 toolCall 元信息，供最后按原始顺序组装 ToolResultMessage。 */
@@ -859,9 +848,9 @@ class StatefulAgentWorkflow @Inject constructor(
                                     async {
                                         val tool = toolRegistry.getTool(toolCall.name)
                                         if (tool is StreamingAgentTool) {
-                                            runToolStream(tool, toolCall, currentContext) { send(it) }
+                                            toolInvoker.runStream(tool, toolCall, currentContext) { send(it) }
                                         } else {
-                                            runToolSync(tool, toolCall, currentContext)
+                                            toolInvoker.runSync(tool, toolCall, currentContext)
                                         }
                                     }
                                 }.awaitAll()
@@ -966,25 +955,6 @@ class StatefulAgentWorkflow @Inject constructor(
         val text = error.message.orEmpty().lowercase()
         return listOf("context_length_exceeded", "context_window_exceeded", "maximum context length",
             "prompt is too long", "input token limit").any { it in text }
-    }
-
-    private suspend fun runToolSync(tool: AgentTool?, toolCall: ToolCall, context: AgentContext): ToolRunResult {
-        val name = toolCall.name
-        if (tool == null) {
-            return ToolRunResult(ToolResult.Error("工具 $name 不存在", "TOOL_NOT_FOUND").toTransportString(), true)
-        }
-        return try {
-            val result = tool.executeWithContext(toolCall.arguments, context)
-            val attachments = if (name == "sendFile" || name == "generateImage") extractAttachments(result) else emptyList()
-            val images = if (result is ToolResult.Success) result.images else emptyList()
-            val transportResult = if (attachments.isNotEmpty()) stripAttachments(result) else result
-            val processed = toolOutputStore.process(name, toolCall.id, transportResult)
-            ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, attachments, images)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            ToolRunResult(ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED").toTransportString(), true)
-        }
     }
 
     private suspend fun activeModelSupportsVision(sessionId: String?): Boolean {
@@ -1268,43 +1238,6 @@ class StatefulAgentWorkflow @Inject constructor(
         FileLogger.w(TAG, "生成提交信息失败", e)
     }.getOrNull()
 
-    private suspend fun runToolStream(
-        tool: StreamingAgentTool, 
-        toolCall: ToolCall,
-        context: AgentContext,
-        onEvent: suspend (AgentEvent) -> Unit
-    ): ToolRunResult {
-        val live = StringBuilder()
-        var lastEmitMs = 0L
-        var finalResult: ToolResult? = null
-        try {
-            tool.executeStream(toolCall.arguments, context).collect { ev ->
-                when (ev) {
-                    is ToolStreamEvent.Progress -> {
-                        live.append(ev.chunk).append('\n')
-                        if (live.length > LIVE_TAIL_CHARS) {
-                            live.delete(0, live.length - LIVE_TAIL_CHARS)
-                        }
-                        val now = System.currentTimeMillis()
-                        if (now - lastEmitMs >= PROGRESS_INTERVAL_MS) {
-                            lastEmitMs = now
-                            onEvent(AgentEvent.ToolCallProgress(toolCall.id, toolCall.name, live.toString()))
-                        }
-                    }
-                    is ToolStreamEvent.Completed -> finalResult = ev.result
-                }
-            }
-            val result = finalResult ?: ToolResult.Error("流式工具未返回结果", "MISSING_STREAM_RESULT")
-            val processed = toolOutputStore.process(toolCall.name, toolCall.id, result)
-            val images = if (result is ToolResult.Success) result.images else emptyList()
-            return ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images = images)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return ToolRunResult(ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED").toTransportString(), true)
-        }
-    }
-
     /**
      * 把模型直出的图片（base64）落盘到 `~/.aicode/generated-images/`，返回带容器路径的 images
      * 与一一对应的 UI 附件（附件只带路径不含 base64，落库不撑爆数据库行）。
@@ -1411,46 +1344,6 @@ class StatefulAgentWorkflow @Inject constructor(
             .trim()
         AgentMode.BUILD -> "\n\n【模式切换】用户已将模式切换为 BUILD（构建）模式，可以正常执行写操作。"
         AgentMode.AUTO -> "\n\n【模式切换】用户已将模式切换为 AUTO（自动）模式。"
-    }
-
-    /**
-     * 从 sendFile 工具结果的 `files` 数组提取文件卡片元数据（含宿主本地路径，供 UI 打开文件用）。
-     * 任一文件缺关键字段则整体返回空（与 sendFile 的原子语义一致）。
-     */
-    private fun extractAttachments(result: ToolResult): List<AgentAttachment> {
-        val data = (result as? ToolResult.Success)?.data as? JsonObject ?: return emptyList()
-        val files = data["files"] as? JsonArray ?: return emptyList()
-        val attachments = files.mapNotNull { elem ->
-            val obj = elem as? JsonObject ?: return@mapNotNull null
-            val path = obj["path"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val localPath = obj["local_path"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: path.substringAfterLast('/')
-            val mimeType = obj["mime_type"]?.jsonPrimitive?.contentOrNull ?: "application/octet-stream"
-            AgentAttachment(
-                fileName = name,
-                containerPath = path,
-                localPath = localPath,
-                mimeType = mimeType,
-                sizeBytes = obj["size_bytes"]?.jsonPrimitive?.longOrNull ?: 0L,
-                isImage = obj["is_image"]?.jsonPrimitive?.booleanOrNull ?: mimeType.startsWith("image/")
-            )
-        }
-        return if (attachments.size == files.size) attachments else emptyList()
-    }
-
-    /** 从回传给模型的 sendFile 结果中剥离宿主本地路径（模型只应看到容器路径）。 */
-    private fun stripAttachments(result: ToolResult): ToolResult {
-        val success = result as? ToolResult.Success ?: return result
-        val data = success.data as? JsonObject ?: return result
-        val strippedFiles = (data["files"] as? JsonArray)?.map { elem ->
-            val obj = elem as? JsonObject ?: return@map elem
-            JsonObject(obj.toMutableMap().apply { remove("local_path") })
-        } ?: return result
-        val strippedData = data.toMutableMap().apply {
-            this["files"] = JsonArray(strippedFiles)
-            this["files_attached"] = JsonPrimitive(true)
-        }
-        return ToolResult.Success(JsonObject(strippedData))
     }
 
     private suspend fun requestPermissionIfNeeded(
