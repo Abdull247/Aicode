@@ -5,6 +5,7 @@ import com.aicode.feature.agent.data.local.dao.LlmCallRecordDao
 import com.aicode.feature.agent.data.local.entity.AgentMessageEntity
 import com.aicode.feature.agent.domain.model.AgentImage
 import com.aicode.feature.agent.domain.model.AgentMessage
+import com.aicode.feature.agent.domain.model.id
 import com.aicode.feature.agent.domain.prompt.SystemPromptProvider
 import com.aicode.feature.agent.domain.provider.AIProvider
 import com.aicode.feature.agent.domain.provider.AIResponse
@@ -46,6 +47,15 @@ class ContextCompactorTest {
         AgentMessage.UserMessage(id = "old", content = "汉".repeat(size)),
         AgentMessage.AssistantMessage(id = "answer", content = "done"),
         AgentMessage.UserMessage(id = "goal", content = "continue the task")
+    )
+
+    /** 一条超长工具输出撑爆上下文的会话：绝大多数「上下文超阈值」其实是这一种。 */
+    private fun toolHeavyHistory(toolChars: Int = 20_000): List<AgentMessage> = listOf(
+        AgentMessage.UserMessage(id = "goal", content = "run the command"),
+        AgentMessage.AssistantMessage(id = "call", content = "", toolCalls = listOf(ToolCall("c1", "shell", emptyMap()))),
+        AgentMessage.ToolResultMessage(id = "c1", toolName = "shell", result = "R".repeat(toolChars)),
+        AgentMessage.AssistantMessage(id = "reply", content = "done"),
+        AgentMessage.UserMessage(id = "next", content = "continue")
     )
 
     @Test
@@ -140,45 +150,49 @@ class ContextCompactorTest {
     }
 
     @Test
-    fun unusableResponsesFallBackToLocalTrimWithoutCommitting() = runTest {
-        prepare()
-        for (response in listOf(AIResponse(""), AIResponse("blocked", stopReason = "refusal"))) {
-            coEvery { provider.complete(any(), any(), any(), any()) } returns response
-            val original = history()
-            val before = CompactionText.estimateRequest("", emptyList(), original)
-            val result = compactor.compactIfNeeded(original, provider, force = true)
-            // 摘要不可用时必须退化为本地裁剪，保证上下文确实变小；
-            // 若原样返回，上下文不变会在下一轮再次触发压缩，表现为长时间卡在压缩上。
-            assertTrue(result.compacted)
-            assertTrue(CompactionText.estimateRequest("", emptyList(), result.messages) < before)
-        }
-        coVerify(exactly = 2) { records.insert(match { it.status == "error" }) }
-        coVerify(exactly = 0) { dao.commitCompaction(any(), any(), any(), any()) }
-    }
-
-    @Test
     fun truncatedSummaryIsKeptRatherThanDiscarded() = runTest {
         prepare()
         coEvery { provider.complete(any(), any(), any(), any()) } returns AIResponse("partial handoff", stopReason = "length")
         val result = compactor.compactIfNeeded(history(), provider, force = true)
         assertTrue(result.compacted)
-        assertTrue(result.messages.any { it is AgentMessage.AssistantMessage && it.content == "partial handoff" })
+        val summary = result.messages[1] as AgentMessage.AssistantMessage
+        assertTrue(summary.content.contains("partial handoff"))
         coVerify(exactly = 0) { records.insert(match { it.status == "error" }) }
     }
 
     @Test
-    fun localTrimPersistsWhenModelFails() = runTest {
+    fun summaryCarriesAntiContinuationBoundary() = runTest {
         prepare()
-        coEvery { dao.getMessagesBySessionOnce("session") } returns listOf(
-            AgentMessageEntity(id = "old", sessionId = "session", role = "USER", content = "history", timestamp = 50),
-            AgentMessageEntity(id = "answer", sessionId = "session", role = "ASSISTANT", content = "done", timestamp = 200),
-            AgentMessageEntity(id = "goal", sessionId = "session", role = "USER", content = "goal", timestamp = 100)
-        )
+        val result = compactor.compactIfNeeded(history(), provider, force = true)
+        val summary = result.messages[1] as AgentMessage.AssistantMessage
+        // 摘要是 assistant 消息且紧跟 marker，没有边界时模型会把它当成自己没写完的话续写。
+        assertTrue(summary.content.startsWith(SUMMARY_HEADER))
+        assertTrue(summary.content.endsWith(SUMMARY_FOOTER))
+        assertTrue(summary.content.contains("Concise handoff"))
+    }
+
+    @Test
+    fun failedSummaryNeverDropsHistoryOrCommits() = runTest {
+        prepare()
         coEvery { provider.complete(any(), any(), any(), any()) } returns AIResponse("")
-        val result = compactor.compactIfNeeded(history(), provider, sessionId = "session", force = true)
-        assertTrue(result.compacted)
-        coVerify(exactly = 1) { dao.commitCompaction("session", listOf("old"), any(), any()) }
-        coVerify(exactly = 1) { persistence.invalidateHistory("session") }
+        val original = history()
+        val result = compactor.compactIfNeeded(original, provider, sessionId = "session", force = true)
+        // 没有工具输出可折时诚实失败：上下文没变小，但一条消息都不能少。
+        // 旧实现在这里整段丢弃 head 并插一条占位，导致模型失去前因后产出乱码。
+        assertFalse(result.compacted)
+        assertEquals(original.map { it.id }, result.messages.map { it.id })
+        coVerify(exactly = 0) { dao.commitCompaction(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { persistence.invalidateHistory(any()) }
+    }
+
+    @Test
+    fun summaryTimeoutCountsAsFailureWithoutDroppingHistory() = runTest {
+        prepare()
+        coEvery { provider.complete(any(), any(), any(), any()) } coAnswers { kotlinx.coroutines.delay(120_000) ; AIResponse("late") }
+        val original = history()
+        val result = compactor.compactIfNeeded(original, provider, force = true)
+        assertFalse(result.compacted)
+        assertEquals(original.map { it.id }, result.messages.map { it.id })
     }
 
     @Test
@@ -188,18 +202,99 @@ class ContextCompactorTest {
         repeat(3) { compactor.compactIfNeeded(history(), provider, force = true) }
         coVerify(exactly = 3) { provider.complete(any(), any(), any(), any()) }
         val cooled = compactor.compactIfNeeded(history(), provider, force = true)
-        assertTrue(cooled.compacted)
+        assertFalse(cooled.compacted)
         coVerify(exactly = 3) { provider.complete(any(), any(), any(), any()) }
     }
 
     @Test
-    fun summaryTimeoutCountsAsFailureAndTrims() = runTest {
-        prepare()
-        coEvery { provider.complete(any(), any(), any(), any()) } coAnswers { kotlinx.coroutines.delay(120_000) ; AIResponse("late") }
-        val before = CompactionText.estimateRequest("", emptyList(), history())
-        val result = compactor.compactIfNeeded(history(), provider, force = true)
+    fun microCompactAloneSolvesOverflowWithoutCallingModel() = runTest {
+        prepare(context = 4_000)
+        val original = toolHeavyHistory()
+        val before = CompactionText.estimateRequest("", emptyList(), original)
+        assertTrue("前置条件：上下文必须真的超阈值", before > 2_678)
+        val result = compactor.compactIfNeeded(original, provider, force = true)
         assertTrue(result.compacted)
         assertTrue(CompactionText.estimateRequest("", emptyList(), result.messages) < before)
+        // 微压缩不调模型，因此没有超时、没有失败，也就不可能走到「摘要失败丢弃历史」。
+        coVerify(exactly = 0) { provider.complete(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { dao.commitCompaction(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun microCompactKeepsEveryUserAndAssistantMessageIntact() = runTest {
+        prepare(context = 4_000)
+        val original = toolHeavyHistory()
+        val kept = compactor.compactIfNeeded(original, provider, force = true).messages
+        assertEquals(original.size, kept.size)
+        original.indices.forEach { index ->
+            when (val message = original[index]) {
+                is AgentMessage.UserMessage, is AgentMessage.AssistantMessage -> assertEquals(message, kept[index])
+                is AgentMessage.ToolResultMessage -> {
+                    val folded = kept[index] as AgentMessage.ToolResultMessage
+                    assertEquals(message.id, folded.id)
+                    // UI 与落库读的 result 保持完整，用户看到的输出一点没少。
+                    assertEquals(message.result, folded.result)
+                    // 只有喂模型的投影被折叠。
+                    assertTrue(folded.modelResult!!.length < message.result.length)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun microCompactPreservesRecentToolResultsAndToolCallPairing() = runTest {
+        prepare(context = 4_000)
+        // 早期一条超大输出 + 最新一条小输出：只有早期那条该被折。
+        val original = listOf(
+            AgentMessage.UserMessage(id = "goal", content = "run"),
+            AgentMessage.AssistantMessage(id = "call0", content = "", toolCalls = listOf(ToolCall("c0", "shell", emptyMap()))),
+            AgentMessage.ToolResultMessage(id = "c0", toolName = "shell", result = "R".repeat(20_000)),
+            AgentMessage.UserMessage(id = "next", content = "and again"),
+            AgentMessage.AssistantMessage(id = "call1", content = "", toolCalls = listOf(ToolCall("c1", "shell", emptyMap()))),
+            AgentMessage.ToolResultMessage(id = "c1", toolName = "shell", result = "small output")
+        )
+        val kept = compactor.compactIfNeeded(original, provider, force = true).messages
+        val early = kept[2] as AgentMessage.ToolResultMessage
+        val recent = kept[5] as AgentMessage.ToolResultMessage
+        assertNull("预算内的近期工具输出不应被折叠", recent.modelResult)
+        assertEquals("small output", recent.result)
+        assertEquals("R".repeat(20_000), early.result)
+        assertNotNull(early.modelResult)
+        assertTrue(early.modelResult!!.length < 20_000)
+        // tool-call / tool-result 配对完整保留。
+        assertEquals(listOf("c0", "c1"), kept.filterIsInstance<AgentMessage.AssistantMessage>().flatMap { it.toolCalls }.map { it.id })
+    }
+
+    @Test
+    fun microCompactStubStillNamesTheToolSoItCanBeRerun() = runTest {
+        // 小窗口 + 多条超长输出，逼折叠逐级加深。最近的结果受保护保持高保真，
+        // 越早的被压得越狠——这与 Claude Code 的 microcompact 行为一致。
+        prepare(context = 4_000)
+        val original = buildList {
+            add(AgentMessage.UserMessage(id = "goal", content = "run"))
+            repeat(16) { index ->
+                add(AgentMessage.AssistantMessage(id = "call$index", content = "",
+                    toolCalls = listOf(ToolCall("c$index", "shell", emptyMap()))))
+                add(AgentMessage.ToolResultMessage(id = "c$index", toolName = "shell", result = "R".repeat(200_000)))
+            }
+        }
+        val events = mutableListOf<AgentEvent>()
+        val result = compactor.compactIfNeeded(original, provider, force = true, onEvent = { events.add(it) })
+        val kept = result.messages
+        assertTrue(result.compacted)
+        // 微压缩不调模型：没有超时、没有失败，也就不可能走到「摘要失败丢弃历史」。
+        coVerify(exactly = 0) { provider.complete(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { dao.commitCompaction(any(), any(), any(), any()) }
+
+        val folded = kept.filterIsInstance<AgentMessage.ToolResultMessage>().mapNotNull { it.modelResult }
+        assertTrue("应当有工具输出被折叠", folded.isNotEmpty())
+        // 每一档都带工具名与原始长度：模型认得出是哪次调用，也拿得到是否重跑的参考。
+        assertTrue(folded.joinToString("\n"), folded.all { it.contains("shell") && it.contains("200000") })
+        // 越早的压得越狠：最近的结果受保护，保真度高于最早的。
+        val lengths = kept.filterIsInstance<AgentMessage.ToolResultMessage>().map { (it.modelResult ?: it.result).length }
+        assertTrue("最早应比最近压得更狠：$lengths", lengths.first() < lengths.last())
+        // 原始输出在落库侧一条没少。
+        assertTrue(kept.filterIsInstance<AgentMessage.ToolResultMessage>().all { it.result == "R".repeat(200_000) })
     }
 
     @Test
