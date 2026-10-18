@@ -151,7 +151,11 @@ class ToolPermissionPolicyEngine @Inject constructor(
                     checkCatastrophicRm(analysis.segments)?.let { return elevationOrDeny(it, args) }
                     // 命令替换/子 shell/绝对路径重定向等无法静态判定的构造，删除目标不可知；
                     // 若同时疑似破坏性，宁可拦下（可提权），避免绕过安全防护。
-                    if (!analysis.analyzable && looksDestructive(command)) {
+                    // 破坏性判定必须用宽松版 [looksDestructiveLoose]：裸 `>` 一律算破坏过于
+                    // 粗糙——AI 排查类命令几乎条条带 `2>/dev/null`，会把无伤大雅的只读命令
+                    // （getprop/pidof/cat /proc/... 等）全部误杀。与「规则拦截」挡位
+                    // （evaluateShell 内同一处修复）保持同一口径。
+                    if (!analysis.analyzable && looksDestructiveLoose(command)) {
                         return elevationOrDeny(REASON_UNANALYZABLE_DESTRUCTIVE, args)
                     }
                 }
@@ -235,22 +239,17 @@ class ToolPermissionPolicyEngine @Inject constructor(
         (args[ELEVATE_ARG] as? JsonPrimitive)?.content?.trim()?.lowercase() == "true"
 
     /**
-     * 该命令是否疑似破坏性（仅在命令不可静态判定时使用）：含输出重定向、`-delete`
-     * 或常见破坏性程序名。宁可多问，不误放。
-     */
-    private fun looksDestructive(command: String): Boolean =
-        command.contains('>') || command.contains("-delete") || DESTRUCTIVE_PROGRAM.containsMatchIn(command)
-
-    /**
-     * 宽松版破坏性判定：用于「不可静态分析」命令的兜底分流。
-     *
-     * 与 [looksDestructive] 的区别：裸 `>` 一律视为破坏性过于粗糙——AI 排查类命令
-     * 几乎条条带 `2>/dev/null`，会把无伤大雅的读取命令全部判成破坏。这里只认：
+     * 破坏性判定（用于「不可静态分析」命令的兜底分流）。宁可多问，不误放——但也不能
+     * 把只读排查命令全部判成破坏。这里只认：
      * 1) [DESTRUCTIVE_PROGRAM] 命中（rm/dd/mkfs…，正则边界含 `()` 与反引号，
      *    覆盖 `$(rm -rf x)` 这类藏在命令替换内部的破坏）；
      * 2) `find … -delete`；
      * 3) 覆盖写重定向 `> 目标`——目标不是 /dev/null、不是 fd 复制（2>&1）、
      *    且不是 `>>` 追加。
+     *
+     * 历史：曾用「含 `>` 即破坏」的严格版，AI 排查类命令几乎条条带 `2>/dev/null`，
+     * 大量与删除无关的命令被误判为破坏（RULE_BASED 与 AUTO 两个挡位均已修为宽松版），
+     * 严格版实现已删除，只保留本函数。
      */
     private fun looksDestructiveLoose(command: String): Boolean =
         command.contains("-delete") ||
@@ -436,10 +435,11 @@ class ToolPermissionPolicyEngine @Inject constructor(
         return when (level) {
             // 完全权限：灾难防护（步骤 0 的 checkCatastrophicRm）之上**一律直接放行**。
             // 此前这里还有一道「不可静态判定且疑似破坏性 → 拦一次」的兜底，但它依据
-            // [looksDestructive]：只要命令里出现任何一个 `>` 就命中，连 `2>/dev/null`
-            // 这种丢弃输出的写法也算。AI 排查类命令几乎条条带 `$()`/`2>/dev/null`，
-            // 结果大量与删除无关的命令被硬拒绝（elevationOrDeny 无弹窗、直接失败），
-            // 与「完全权限」的语义矛盾。用户既然选了这一挡，就按其字面执行。
+            // 「含 `>` 即破坏」的严格判定：只要命令里出现任何一个 `>` 就命中，连
+            // `2>/dev/null` 这种丢弃输出的写法也算。AI 排查类命令几乎条条带
+            // `$()`/`2>/dev/null`，结果大量与删除无关的命令被硬拒绝
+            // （elevationOrDeny 无弹窗、直接失败），与「完全权限」的语义矛盾。
+            // 用户既然选了这一挡，就按其字面执行。
             CommandAuthLevel.FULL_ACCESS -> EvalResult(Verdict.ALLOW, emptyList())
 
             // 规则拦截：命中高危规则 → 人工确认；不可静态判定 → 破坏特征扫描；其余自动放行。

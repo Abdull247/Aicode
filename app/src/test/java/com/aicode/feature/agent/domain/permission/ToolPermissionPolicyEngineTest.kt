@@ -380,6 +380,38 @@ class ToolPermissionPolicyEngineTest {
     }
 
     @Test
+    fun autoMode_unanalyzableBenignWithStderrRedirect_allowed() = runTest {
+        // 回归（10-18 真机复现）：AUTO 分支曾用「含 `>` 即破坏」的严格判定，而
+        // ShellCommandParser 把 `> /dev/null` 判为不可静态判定——两个条件叠加，
+        // 条条带 `2>/dev/null` 的只读排查命令（getprop/pidof/cat /proc/...）被
+        // 硬拒绝，理由是 REASON_UNANALYZABLE_DESTRUCTIVE。「规则拦截」挡位早就
+        // 修为宽松版，AUTO 分支漏改；现已统一口径。
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.EXECUTE_COMMANDS),
+            "Bash",
+            bash("id; getprop ro.product.cpu.abi; getenforce 2>/dev/null; cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null; echo \"--- dfm proc ---\"; pidof com.tencent.tmgp.dfm 2>/dev/null || echo \"not running\"; echo \"--- dfm installed ---\"; ls /data/app/ | grep -i tmgp.dfm"),
+            AgentMode.AUTO
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
+    }
+
+    @Test
+    fun autoMode_unanalyzableDestructive_stillDeniedAfterLooseFix() = runTest {
+        // 安全边界不因误报修复而放松：藏在命令替换里的 find -delete 仍须拦截
+        val e = engine()
+        assertEquals(
+            ToolPermissionPolicyEngine.Verdict.DENY,
+            e.evaluate(
+                tool(ToolCapability.EXECUTE_COMMANDS),
+                "Bash",
+                bash("echo \$(find /data -name '*.tmp' -delete)"),
+                AgentMode.AUTO
+            ).verdict
+        )
+    }
+
+    @Test
     fun autoMode_safetyDisabled_unanalyzable_allowed() = runTest {
         val e = engine(safetyDisabled = true)
         assertEquals(
