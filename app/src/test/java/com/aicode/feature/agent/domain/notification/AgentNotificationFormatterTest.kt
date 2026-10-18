@@ -43,9 +43,9 @@ class AgentNotificationFormatterTest {
     private val modeChange = PendingNotification(
         kind = AgentNotificationKind.MODE_CHANGE,
         sourceId = "user",
-        title = "AUTO",
+        title = "ASK",
         outcome = NotificationOutcome.COMPLETED,
-        newMode = AgentMode.AUTO
+        newMode = AgentMode.ASK
     )
 
     private val userMessage = PendingNotification(
@@ -168,9 +168,9 @@ class AgentNotificationFormatterTest {
         val text = AgentNotificationFormatter.buildMessage(listOf(modeChange))
 
         assertTrue(text.contains("<mode-change>"))
-        assertTrue(text.contains("<new-mode>AUTO</new-mode>"))
+        assertTrue(text.contains("<new-mode>ASK</new-mode>"))
         assertTrue(text.contains("<status>changed</status>"))
-        assertTrue(text.contains("<summary>用户已将模式切换为 AUTO</summary>"))
+        assertTrue(text.contains("<summary>用户已将模式切换为 ASK</summary>"))
     }
 
     @Test
@@ -179,7 +179,7 @@ class AgentNotificationFormatterTest {
         val obj = array[0] as JsonObject
 
         assertEquals("mode_change", (obj["kind"] as JsonPrimitive).content)
-        assertEquals("AUTO", (obj["new_mode"] as JsonPrimitive).content)
+        assertEquals("ASK", (obj["new_mode"] as JsonPrimitive).content)
         assertEquals("changed", (obj["status"] as JsonPrimitive).content)
         assertTrue((obj["hint"] as JsonPrimitive).content.contains("新模式"))
     }

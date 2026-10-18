@@ -21,7 +21,7 @@ import org.junit.Test
 
 /**
  * 工具授权策略引擎的分支覆盖。规则加载经 mock 注入，聚焦 [ToolPermissionPolicyEngine.evaluate]
- * 的裁决逻辑：PLAN/AUTO 模式特判、DENY 优先、白名单/记忆规则、rm 高危删除防护与不可记忆降级。
+ * 的裁决逻辑：PLAN/ASK 模式特判、完全权限挡位、DENY 优先、白名单/记忆规则、rm 高危删除防护与不可记忆降级。
  * 底层 [ShellCommandParser] / [BuiltInSafeCommands] 的解析细节由各自独立测试覆盖，不在此重复。
  */
 class ToolPermissionPolicyEngineTest {
@@ -96,49 +96,82 @@ class ToolPermissionPolicyEngineTest {
         assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
     }
 
-    // ── AUTO 模式：放行但保留灾难性 rm 防护 ──────────────────────────
+    // ── 完全权限挡位：直接放行但保留灾难性 rm 防护 ────────────────────
+    // （原 AUTO 会话模式的「全放行」语义由「完全权限」挡位承担，AUTO 已退场）
 
     @Test
-    fun autoMode_allowsAnyTool() = runTest {
-        val e = engine()
-        val r = e.evaluate(tool(ToolCapability.WRITE_WORKSPACE), "writeFile", emptyMap(), AgentMode.AUTO)
+    fun fullAccessLevel_allowsAnyTool() = runTest {
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
+        val r = e.evaluate(tool(ToolCapability.WRITE_WORKSPACE), "writeFile", emptyMap(), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
     @Test
-    fun autoMode_allowsBash() = runTest {
-        val e = engine()
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("ls -la"), AgentMode.AUTO)
+    fun fullAccessLevel_allowsBash() = runTest {
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("ls -la"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
     @Test
-    fun autoMode_stillBlocksCatastrophicRm() = runTest {
-        val e = engine()
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.AUTO)
+    fun fullAccessLevel_stillBlocksCatastrophicRm() = runTest {
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
         assertTrue(r.denyReason?.startsWith("安全防护：禁止执行高危删除操作（根目录删除）") == true)
     }
 
     @Test
-    fun autoMode_stillBlocksWorkspaceRm() = runTest {
-        val e = engine()
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf ~/workspace/*"), AgentMode.AUTO)
+    fun fullAccessLevel_stillBlocksWorkspaceRm() = runTest {
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf ~/workspace/*"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
     }
 
     @Test
-    fun autoMode_disabledSafety_allowsCatastrophicRm() = runTest {
-        val e = engine(safetyDisabled = true)
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.AUTO)
+    fun disabledSafety_allModes_allowsCatastrophicRm() = runTest {
+        // 「禁用安全拦截」现对全部模式生效（原 AUTO 专属开关随 AUTO 一并退场）
+        val e = engine(safetyDisabled = true, level = CommandAuthLevel.FULL_ACCESS)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
+    // ── ASK 模式：写操作硬拒绝，且禁止 AI 自行切入 PLAN ─────────────
+
     @Test
-    fun disabledSafety_buildMode_stillBlocksCatastrophicRm() = runTest {
-        val e = engine(safetyDisabled = true)
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
+    fun askMode_deniesWriteTool() = runTest {
+        val e = engine()
+        val r = e.evaluate(tool(ToolCapability.WRITE_WORKSPACE), "writeFile", emptyMap(), AgentMode.ASK)
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun askMode_deniesBash() = runTest {
+        val e = engine()
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("ls -la"), AgentMode.ASK)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun askMode_deniesPlanModeSwitch() = runTest {
+        // planMode 的能力不在危险能力集里，须单独拦截，否则会弹窗后被执行
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.MODIFY_SESSION_STATE),
+            "planMode",
+            mapOf("action" to JsonPrimitive("enter")),
+            AgentMode.ASK
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun askMode_allowsReadOnlyTool() = runTest {
+        val e = engine(
+            PermissionRule("list", PermissionRule.WHOLE_TOOL, PermissionDecision.ALLOW)
+        )
+        val r = e.evaluate(tool(ToolCapability.READ_WORKSPACE), "list", emptyMap(), AgentMode.ASK)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
     // ── 只读 Agent 配置自动放行 ─────────────────────────────────────
@@ -284,7 +317,7 @@ class ToolPermissionPolicyEngineTest {
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
     }
 
-    // ── 提权：非 AUTO 模式下携带 elevate 将硬拒绝降级为一次性授权 ──────
+    // ── 提权：携带 elevate 将硬拒绝降级为一次性授权 ───────────────────
 
     @Test
     fun catastrophicRm_elevate_asksUser() = runTest {
@@ -309,13 +342,13 @@ class ToolPermissionPolicyEngineTest {
     }
 
     @Test
-    fun catastrophicRm_autoMode_elevate_asksUser() = runTest {
-        val e = engine()
+    fun catastrophicRm_fullAccessLevel_elevate_asksUser() = runTest {
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
         val r = e.evaluate(
             tool(ToolCapability.EXECUTE_COMMANDS),
             "Bash",
             mapOf("command" to JsonPrimitive("rm -rf /"), "elevate" to JsonPrimitive(true)),
-            AgentMode.AUTO
+            AgentMode.BUILD
         )
         assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
     }
@@ -355,72 +388,58 @@ class ToolPermissionPolicyEngineTest {
         assertTrue(denied("rm -rf ~/workspace/.."))
     }
 
-    // ── AUTO：无法静态判定的疑似破坏性命令保守拦截 ─────────────────
+    // ── 完全权限挡位：不可静态判定的命令按字面放行 ─────────────────────
 
     @Test
-    fun autoMode_unanalyzableDestructive_denied() = runTest {
-        val e = engine()
-        assertEquals(
-            ToolPermissionPolicyEngine.Verdict.DENY,
-            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf \$(echo /etc)"), AgentMode.AUTO).verdict
-        )
-        assertEquals(
-            ToolPermissionPolicyEngine.Verdict.DENY,
-            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("cat > /etc/passwd"), AgentMode.AUTO).verdict
-        )
-    }
-
-    @Test
-    fun autoMode_unanalyzableBenign_allowed() = runTest {
-        val e = engine()
+    fun fullAccess_unanalyzableBenign_allowed() = runTest {
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
         assertEquals(
             ToolPermissionPolicyEngine.Verdict.ALLOW,
-            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("echo \$(date)"), AgentMode.AUTO).verdict
+            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("echo \$(date)"), AgentMode.BUILD).verdict
         )
     }
 
     @Test
-    fun autoMode_unanalyzableBenignWithStderrRedirect_allowed() = runTest {
-        // 回归（10-18 真机复现）：AUTO 分支曾用「含 `>` 即破坏」的严格判定，而
+    fun fullAccess_unanalyzableBenignWithStderrRedirect_allowed() = runTest {
+        // 回归（10-18 真机复现）：原 AUTO 分支曾用「含 `>` 即破坏」的严格判定，而
         // ShellCommandParser 把 `> /dev/null` 判为不可静态判定——两个条件叠加，
         // 条条带 `2>/dev/null` 的只读排查命令（getprop/pidof/cat /proc/...）被
-        // 硬拒绝，理由是 REASON_UNANALYZABLE_DESTRUCTIVE。「规则拦截」挡位早就
-        // 修为宽松版，AUTO 分支漏改；现已统一口径。
-        val e = engine()
+        // 硬拒绝。现已统一为宽松判定（只认 find -delete / 破坏性程序 / 覆盖写重定向），
+        // 且「完全权限」按字面放行，不再有第二道兜底拦截。
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
         val r = e.evaluate(
             tool(ToolCapability.EXECUTE_COMMANDS),
             "Bash",
             bash("id; getprop ro.product.cpu.abi; getenforce 2>/dev/null; cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null; echo \"--- dfm proc ---\"; pidof com.tencent.tmgp.dfm 2>/dev/null || echo \"not running\"; echo \"--- dfm installed ---\"; ls /data/app/ | grep -i tmgp.dfm"),
-            AgentMode.AUTO
+            AgentMode.BUILD
         )
         assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
     @Test
-    fun autoMode_unanalyzableDestructive_stillDeniedAfterLooseFix() = runTest {
-        // 安全边界不因误报修复而放松：藏在命令替换里的 find -delete 仍须拦截
+    fun ruleBased_unanalyzableDestructiveInSubstitution_stillAsks() = runTest {
+        // 安全边界不因误报修复而放松：藏在命令替换里的 find -delete 在「规则拦截」挡位仍须人工确认
         val e = engine()
-        assertEquals(
-            ToolPermissionPolicyEngine.Verdict.DENY,
-            e.evaluate(
-                tool(ToolCapability.EXECUTE_COMMANDS),
-                "Bash",
-                bash("echo \$(find /data -name '*.tmp' -delete)"),
-                AgentMode.AUTO
-            ).verdict
+        val r = e.evaluate(
+            tool(ToolCapability.EXECUTE_COMMANDS),
+            "Bash",
+            bash("echo \$(find /data -name '*.tmp' -delete)"),
+            AgentMode.BUILD
         )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
     }
 
     @Test
-    fun autoMode_safetyDisabled_unanalyzable_allowed() = runTest {
-        val e = engine(safetyDisabled = true)
+    fun safetyDisabled_unanalyzable_allowed() = runTest {
+        val e = engine(safetyDisabled = true, level = CommandAuthLevel.FULL_ACCESS)
         assertEquals(
             ToolPermissionPolicyEngine.Verdict.ALLOW,
-            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("cat > /etc/passwd"), AgentMode.AUTO).verdict
+            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("cat > /etc/passwd"), AgentMode.BUILD).verdict
         )
     }
 
-    // ── Shizuku 高危工具：一律弹窗、不可记忆，AUTO 不豁免 ─────────────
+    // ── Shizuku 高危工具：一律弹窗、不可记忆，完全权限也不豁免 ─────────
 
     private fun shizuku(command: String) = mapOf("command" to JsonPrimitive(command))
 
@@ -460,28 +479,21 @@ class ToolPermissionPolicyEngineTest {
     }
 
     @Test
-    fun shizuku_autoMode_asks() = runTest {
-        val e = engine()
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.AUTO)
+    fun shizuku_fullAccess_asks() = runTest {
+        // 完全权限不豁免 Shizuku 逐次确认
+        val e = engine(level = CommandAuthLevel.FULL_ACCESS)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
         assertTrue(r.rememberablePatterns.isEmpty())
         assertNotNull(r.rememberDisabledReason)
     }
 
     @Test
-    fun shizuku_autoMode_safetyDisabled_allows() = runTest {
-        val e = engine(safetyDisabled = true)
-        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.AUTO)
-        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
-    }
-
-    @Test
-    fun shizuku_buildMode_safetyDisabled_stillAsksWithoutRememberable() = runTest {
-        val e = engine(safetyDisabled = true)
-        // 开关仅解除 AUTO 豁免，不可记忆在 BUILD 下始终生效
+    fun shizuku_safetyDisabled_allows() = runTest {
+        // 「禁用安全拦截」对全部模式与挡位生效：Shizuku 也不再逐次确认
+        val e = engine(safetyDisabled = true, level = CommandAuthLevel.FULL_ACCESS)
         val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.BUILD)
-        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
-        assertTrue(r.rememberablePatterns.isEmpty())
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
     @Test
@@ -622,10 +634,11 @@ class ToolPermissionPolicyEngineTest {
     }
 
     @Test
-    fun fullAccess_catastrophicRm_stillDenied() = runTest {
+    fun fullAccess_safetyDisabled_allowsCatastrophicRm() = runTest {
+        // 「禁用安全拦截」现对全部模式与挡位生效（原 AUTO 专属开关随 AUTO 退场）
         val e = engine(level = CommandAuthLevel.FULL_ACCESS, safetyDisabled = true)
         val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
-        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
     // ── 「自主执行」挡位：统一标记 aiReviewable 交工作流层 AI 审查 ─────────────

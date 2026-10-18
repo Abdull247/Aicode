@@ -18,13 +18,19 @@ import javax.inject.Inject
 
 /**
  * 让 AI 进入或退出 PLAN（计划）模式。退出时恢复到进入 PLAN 之前的模式（见 [AgentContext.modeBeforePlan]）。
+ *
+ * 退出（action="exit"）不是立即切换：workflow 会挂起并弹出「计划审查面板」，
+ * 用户可选择：
+ * - 批准并实施：按计划切回原模式执行；
+ * - 继续反馈：回到 PLAN 模式，用户随后输入修改意见，AI 修订后再次 exit 重新提交，
+ *   循环往复直到用户满意（对齐 Claude Code 的计划审批闭环）。
  */
 class PlanModeTool @Inject constructor(
     private val chatSessionDao: ChatSessionDao
 ) : AbstractContextualTool() {
 
     override val name = "planMode"
-    override val description = "进入或退出 PLAN（计划）模式。action=\"enter\"：进入计划模式，转为只读探索、构思复杂改动方案，不要在 BUILD 模式直接写代码；action=\"exit\"：计划已经完成、要开始动手时退出计划模式。退出后会自动恢复到进入 PLAN 之前的模式（从 AUTO 进入就回到 AUTO，从 BUILD 进入就回到 BUILD），无需你指定目标模式。进入与退出都需要用户授权，退出还会额外经过计划审查面板确认。注意：AUTO（自动）模式只能由用户在界面上手动进入，本工具无法进入 AUTO；但处于 AUTO 模式时可以 action=\"enter\" 进入 PLAN（这是 AI 退出 AUTO 的唯一路径）。"
+    override val description = "进入或退出 PLAN（计划）模式。action=\"enter\"：进入计划模式，转为只读探索、构思复杂改动方案，不要在 BUILD 模式直接写代码；action=\"exit\"：计划已经完成、提交给用户审阅时退出计划模式。退出后会自动恢复到进入 PLAN 之前的模式（从 BUILD 进入就回到 BUILD，从 ASK 进入就回到 ASK），无需你指定目标模式。退出会弹出计划审查面板，用户有两种选择：「批准并实施」→ 按计划执行；「继续反馈」→ 留在计划模式，用户会提出修改意见，你修订完善后再次调用 exit 重新提交，直到用户满意为止。进入与退出都需要用户授权；模式切换只能由用户在界面手动完成，本工具无法修改用户当前选择的模式。"
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.MODIFY_SESSION_STATE)
 
@@ -73,8 +79,8 @@ class PlanModeTool @Inject constructor(
         val sessionEntity = chatSessionDao.getById(sessionId)
             ?: return ToolResult.Error("找不到会话记录", "SESSION_NOT_FOUND")
 
-        // 进入 PLAN 时记下当时的模式，退出时恢复到它：从 AUTO 进入 PLAN 的规划往返结束后应回到 AUTO，
-        // 而不是一律落回 BUILD。该字段只在处于 PLAN 时被读取，每次进入 PLAN 都会覆写，因此无需在退出时清理。
+        // 进入 PLAN 时记下当时的模式，退出时恢复到它：从 ASK/BUILD 进入 PLAN 的规划往返结束后
+        // 应回到原模式，而不是一律落回 BUILD。该字段只在处于 PLAN 时被读取，每次进入 PLAN 都会覆写，因此无需在退出时清理。
         val effectiveMode: AgentMode
         val modeBeforePlan: String?
         if (entering) {

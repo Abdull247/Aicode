@@ -113,7 +113,9 @@ import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Map
 import compose.icons.feathericons.Maximize
+import compose.icons.feathericons.MessageCircle
 import compose.icons.feathericons.Minimize
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
@@ -445,44 +447,18 @@ internal fun ChatInputBar(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val modeColor = when (currentMode) {
-                            AgentMode.PLAN -> MaterialTheme.colorScheme.primaryContainer
-                            AgentMode.AUTO -> MaterialTheme.colorScheme.error
-                            AgentMode.BUILD -> MaterialTheme.semanticColors.success
-                        }
-                        val modeTextColor = when (currentMode) {
-                            AgentMode.PLAN -> MaterialTheme.colorScheme.onPrimaryContainer
-                            AgentMode.AUTO -> MaterialTheme.colorScheme.onError
-                            AgentMode.BUILD -> MaterialTheme.semanticColors.onSuccess
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = modeColor,
-                            modifier = Modifier
-                                .clickable {
-                                    val nextMode = when (currentMode) {
-                                        AgentMode.BUILD -> AgentMode.PLAN
-                                        AgentMode.PLAN -> AgentMode.AUTO
-                                        AgentMode.AUTO -> AgentMode.BUILD
-                                    }
-                                    onToggleMode(nextMode)
+                        AgentModeChip(
+                            mode = currentMode,
+                            onClick = {
+                                // 三档循环：构建 → 计划 → 提问（对齐 Claude Code 的 Build/Plan/Ask）
+                                val nextMode = when (currentMode) {
+                                    AgentMode.BUILD -> AgentMode.PLAN
+                                    AgentMode.PLAN -> AgentMode.ASK
+                                    AgentMode.ASK -> AgentMode.BUILD
                                 }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(46.dp)
-                                    .padding(vertical = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = currentMode.name,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = modeTextColor
-                                    )
-                                )
+                                onToggleMode(nextMode)
                             }
-                        }
+                        )
                         Spacer(Modifier.width(Spacing.xs))
 
                         ModelIconButton(
@@ -1083,6 +1059,64 @@ private fun ErrorBubble(message: String) {
 }
 
 /**
+ * 会话模式芯片：点击在 构建 → 计划 → 提问 三档间循环（对齐 Claude Code 的 Build/Plan/Ask）。
+ * 中文标签 + 模式图标；颜色区分：构建=成功绿、计划=主题蓝、提问=紫。
+ */
+@Composable
+private fun AgentModeChip(
+    mode: AgentMode,
+    onClick: () -> Unit
+) {
+    val chipColor = when (mode) {
+        AgentMode.BUILD -> MaterialTheme.colorScheme.semanticColors.success
+        AgentMode.PLAN -> MaterialTheme.colorScheme.primaryContainer
+        AgentMode.ASK -> MaterialTheme.colorScheme.tertiaryContainer
+    }
+    val chipTextColor = when (mode) {
+        AgentMode.BUILD -> MaterialTheme.colorScheme.semanticColors.onSuccess
+        AgentMode.PLAN -> MaterialTheme.colorScheme.onPrimaryContainer
+        AgentMode.ASK -> MaterialTheme.colorScheme.onTertiaryContainer
+    }
+    val chipIcon = when (mode) {
+        AgentMode.BUILD -> FeatherIcons.Play
+        AgentMode.PLAN -> FeatherIcons.Map
+        AgentMode.ASK -> FeatherIcons.MessageCircle
+    }
+    val chipLabel = stringResource(
+        when (mode) {
+            AgentMode.BUILD -> R.string.chat_mode_build
+            AgentMode.PLAN -> R.string.chat_mode_plan
+            AgentMode.ASK -> R.string.chat_mode_ask
+        }
+    )
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = chipColor,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = chipIcon,
+                contentDescription = null,
+                tint = chipTextColor,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = chipLabel,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = chipTextColor
+                )
+            )
+        }
+    }
+}
+
+/**
  * 计划审查面板：AI 从 PLAN 模式切回 BUILD 时弹出，展示计划摘要供用户批准或继续反馈。
  * 风格与 ToolPermissionPanel / AskUserQuestionPanel 一致。
  */
@@ -1157,6 +1191,12 @@ internal fun PlanApprovalPanel(
                     }
 
                     Spacer(Modifier.height(Spacing.md))
+                    Text(
+                        text = stringResource(R.string.chat_plan_approval_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         AgentActionButton(
                             text = stringResource(R.string.chat_continue_feedback),

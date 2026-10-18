@@ -631,9 +631,13 @@
     <string name="channel_device_confirm_message">切换后，AI 执行的命令、文件读写与终端会话都将直接以 root 身份作用于真机系统，不再受沙盒隔离。误操作（删除系统文件、修改分区等）可能导致系统损坏或数据丢失，且不可恢复。\n\n请确认你了解风险并已做好备份。</string>
     <string name="channel_root_blocked_title">无法切换</string>
     <string name="channel_root_blocked_message">检测到 su 不可用。请确认设备已 ROOT，并在 ROOT 管理器（Magisk/KernelSU 等）中授予本应用超级用户权限后重新检测。</string>
-    <string name="chat_plan_completed">计划已完成</string>
+    <string name="chat_plan_completed">计划已就绪</string>
     <string name="chat_continue_feedback">继续反馈</string>
     <string name="chat_approve_and_implement">批准并实施</string>
+    <string name="chat_plan_approval_hint">批准后按计划执行；选择「继续反馈」可直接在输入框补充修改意见，AI 完善后再交你审阅，直到满意为止。</string>
+    <string name="chat_mode_build">构建</string>
+    <string name="chat_mode_plan">计划</string>
+    <string name="chat_mode_ask">提问</string>
 
     <!-- Checkpoint & Rewind -->
     <string name="checkpoint_rewind_title">检查点与撤销</string>
@@ -1197,9 +1201,9 @@
     <string name="perm_promote_to_global">提升为全局</string>
     <string name="perm_safety_group">安全防护</string>
     <string name="perm_disable_safety_interception">禁用安全拦截</string>
-    <string name="perm_disable_safety_interception_desc">开启后 AUTO 模式下不再拦截灾难性删除，Shizuku 也不再逐次确认</string>
+    <string name="perm_disable_safety_interception_desc">开启后不再拦截灾难性删除，Shizuku 也不再逐次确认（对所有模式生效）</string>
     <string name="perm_safety_confirm_title">确认禁用安全拦截？</string>
-    <string name="perm_safety_confirm_message">禁用后，AUTO 模式下连灾难性删除也不再拦截，Shizuku 工具也不再逐次确认。请谨慎操作。</string>
+    <string name="perm_safety_confirm_message">禁用后，连灾难性删除也不再拦截，Shizuku 工具也不再逐次确认。请谨慎操作。</string>
     <string name="perm_safety_confirm_action">确认（%1$d）</string>
     <string name="perm_safety_confirm_action_ready">确认</string>
     <!-- 命令授权挡位 -->

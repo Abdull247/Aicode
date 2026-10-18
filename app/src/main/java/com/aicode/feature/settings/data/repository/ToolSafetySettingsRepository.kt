@@ -15,7 +15,7 @@ import javax.inject.Singleton
 private val Context.toolSafetyDataStore by preferencesDataStore(name = "tool_safety_prefs")
 
 /**
- * 命令执行授权挡位（作用于 BUILD 模式下 shell 类工具的评估；PLAN 物理拦截、AUTO 会话模式全放行均不受影响）。
+ * 命令执行授权挡位（作用于 BUILD 模式下 shell 类工具的评估；PLAN/ASK 只读沙盒为物理拦截，不受挡位影响）。
  * - [AUTONOMOUS]：自主执行——由「AI 命令审查器」独立审核每条命令，审查通过直接放行；
  *   审查拒绝/不确定/失败一律转人工审批（拒绝时附审查器给出的危险说明）。
  * - [RULE_BASED]：规则拦截——命中高危拦截规则的命令弹人工确认，其余命令自动执行（默认）。
@@ -26,9 +26,9 @@ enum class CommandAuthLevel { AUTONOMOUS, RULE_BASED, FULL_ACCESS }
 /**
  * 持久化「禁用安全拦截」开关，默认关闭。
  *
- * 开启后，AUTO（自动）模式下连灾难性 `rm`（删除根目录、系统关键目录、工作区根目录等）
- * 也不再拦截，命令一律放行，`Shizuku` 工具也不再逐次弹窗。仅作用于 AUTO 模式：
- * BUILD / PLAN 模式的安全拦截不受影响，Shizuku 在 BUILD 下的「不可记忆」也不受影响。
+ * 开启后，所有模式下连灾难性 `rm`（删除根目录、系统关键目录、工作区根目录等）
+ * 也不再拦截，命令一律放行，`Shizuku` 工具也不再逐次弹窗。PLAN/ASK 的写操作
+ * 物理沙盒不受影响（那是模式级硬拒绝，不是本开关的可选项）。
  */
 @Singleton
 class ToolSafetySettingsRepository @Inject constructor(

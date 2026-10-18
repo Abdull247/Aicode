@@ -18,7 +18,7 @@ data class ChatSessionEntity(
     val updatedAt: Long,
     val workspacePath: String = "",
     val mode: String = AgentMode.BUILD.name,
-    /** 进入 PLAN 前的模式（如 AUTO）；退出 PLAN 时恢复，null 视为 BUILD。 */
+    /** 进入 PLAN 前的模式（BUILD/ASK）；退出 PLAN 时恢复，null 视为 BUILD。 */
     val modeBeforePlan: String? = null,
     val reasoningEffort: String = ReasoningEffort.MEDIUM.name,
     val providerId: String? = null,

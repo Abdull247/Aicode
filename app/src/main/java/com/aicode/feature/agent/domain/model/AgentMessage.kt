@@ -73,7 +73,7 @@ data class AgentContext(
     val inputMessageId: String = java.util.UUID.randomUUID().toString(),
     val lastInputTokens: Int = 0,
     val mode: AgentMode = AgentMode.BUILD,
-    /** 进入 PLAN 前的模式（如 AUTO）：退出 PLAN 时恢复到它，null 视为 BUILD。 */
+    /** 进入 PLAN 前的模式（BUILD/ASK）：退出 PLAN 时恢复到它，null 视为 BUILD。 */
     val modeBeforePlan: AgentMode? = null,
     /** 思考强度（"low"/"medium"/"high"），随每次 LLM 请求传给支持的 provider。 */
     val reasoningEffort: String? = null,

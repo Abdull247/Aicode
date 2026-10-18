@@ -38,7 +38,7 @@ class PlanApprovalManager @Inject constructor(
         try {
             return decision.await()
         } catch (e: CancellationException) {
-            // 用户未批准切换（点「停止」等取消路径）：SwitchModeTool 已把目标模式写入 DB，
+            // 用户未批准切换（点「停止」等取消路径）：PlanModeTool 已把目标模式写入 DB，
             // 取消意味着未获批准，需回滚，否则模式会未经批准直接切过去。
             rollbackModeToPlan(sessionId)
             throw e
@@ -53,7 +53,7 @@ class PlanApprovalManager @Inject constructor(
     fun resolve(choice: PlanApprovalChoice) {
         _pendingApproval.value = null
 
-        // 用户拒绝时，回滚数据库中的模式到 PLAN（SwitchModeTool 已写入 BUILD）
+        // 用户拒绝时，回滚数据库中的模式到 PLAN（PlanModeTool 已写入目标模式）
         if (choice == PlanApprovalChoice.REFINE) {
             rollbackModeToPlan(currentSessionId)
         }
@@ -61,7 +61,7 @@ class PlanApprovalManager @Inject constructor(
         currentDecision?.complete(choice)
     }
 
-    /** 回滚会话模式到 PLAN（SwitchModeTool 已提前写入目标模式，未获批准时还原）。 */
+    /** 回滚会话模式到 PLAN（PlanModeTool 已提前写入目标模式，未获批准时还原）。 */
     private fun rollbackModeToPlan(sessionId: String?) {
         val sid = sessionId ?: return
         scope.launch {

@@ -631,9 +631,13 @@
     <string name="channel_device_confirm_message">After switching, the AI\'s commands, file operations and terminal sessions will act directly on the real device as root, with no sandbox isolation. Mistakes (deleting system files, modifying partitions, etc.) may damage the system or cause irreversible data loss.\n\nOnly proceed if you understand the risks and have a backup.</string>
     <string name="channel_root_blocked_title">Cannot Switch</string>
     <string name="channel_root_blocked_message">su is not available. Make sure the device is rooted and grant this app superuser access in your ROOT manager (Magisk/KernelSU, etc.), then check again.</string>
-    <string name="chat_plan_completed">Plan completed</string>
-    <string name="chat_continue_feedback">Continue feedback</string>
+    <string name="chat_plan_completed">Plan ready</string>
+    <string name="chat_continue_feedback">Keep refining</string>
     <string name="chat_approve_and_implement">Approve and implement</string>
+    <string name="chat_plan_approval_hint">Approve to execute the plan. Choose "Keep refining" to type your change requests in the input box — the AI will revise the plan and resubmit until you are satisfied.</string>
+    <string name="chat_mode_build">Build</string>
+    <string name="chat_mode_plan">Plan</string>
+    <string name="chat_mode_ask">Ask</string>
 
     <!-- Checkpoint & Rewind -->
     <string name="checkpoint_rewind_title">Checkpoint &amp; Rewind</string>
@@ -1197,9 +1201,9 @@
     <string name="perm_promote_to_global">Promote to global</string>
     <string name="perm_safety_group">Safety</string>
     <string name="perm_disable_safety_interception">Disable safety interception</string>
-    <string name="perm_disable_safety_interception_desc">When on, AUTO mode stops blocking catastrophic deletes and Shizuku prompts</string>
+    <string name="perm_disable_safety_interception_desc">When on, catastrophic deletes are no longer blocked and Shizuku stops prompting (applies to all modes)</string>
     <string name="perm_safety_confirm_title">Disable safety interception?</string>
-    <string name="perm_safety_confirm_message">Once disabled, AUTO mode no longer blocks catastrophic deletes and no longer prompts for the Shizuku tool. Proceed with caution.</string>
+    <string name="perm_safety_confirm_message">Once disabled, catastrophic deletes are no longer blocked and the Shizuku tool no longer prompts. Proceed with caution.</string>
     <string name="perm_safety_confirm_action">Confirm (%1$d)</string>
     <string name="perm_safety_confirm_action_ready">Confirm</string>
     <!-- Command authorization levels -->

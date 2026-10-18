@@ -140,7 +140,7 @@ class StatefulAgentWorkflow @Inject constructor(
         const val COMMAND_REVIEWER_FILE = "agent/command-reviewer.md"
         /** 模式提醒提示词：复用 prompts 目录文件（用户可自定义覆盖），切换时随消息注入而非进 system。 */
         const val MODE_REMINDER_PLAN_FILE = "agent/plan-mode.md"
-        const val MODE_REMINDER_AUTO_FILE = "agent/auto-mode.md"
+        const val MODE_REMINDER_ASK_FILE = "agent/ask-mode.md"
         val LEADING_COMMENT = Regex("(?s)^\\s*<!--.*?-->\\s*")
         /** 模型直出图片落盘目录（与 GenerateImageTool 保持一致）。 */
         const val GENERATED_IMAGE_DIR = "~/.aicode/generated-images"
@@ -1284,7 +1284,7 @@ class StatefulAgentWorkflow @Inject constructor(
             val action = (toolCall.arguments["action"] as? JsonPrimitive)?.content?.trim()?.lowercase()
                 ?: toolCall.arguments["action"]?.toString()?.replace("\"", "")?.trim()?.lowercase()
             when (action) {
-                // 进入 PLAN 时记住当前模式；退出时恢复到它（AUTO→PLAN 的规划往返结束后回到 AUTO 而非 BUILD）。
+                // 进入 PLAN 时记住当前模式；退出时恢复到它（BUILD/ASK→PLAN 的规划往返结束后回到原模式而非 BUILD）。
                 "enter" -> if (currentContext.mode != AgentMode.PLAN) {
                     return currentContext.copy(mode = AgentMode.PLAN, modeBeforePlan = currentContext.mode) to true
                 }
@@ -1306,7 +1306,7 @@ class StatefulAgentWorkflow @Inject constructor(
             .replace(LEADING_COMMENT, "")
             .trim()
             .let { "【模式提醒】$it" }
-        AgentMode.AUTO -> promptProvider.resolvePrompt(MODE_REMINDER_AUTO_FILE)
+        AgentMode.ASK -> promptProvider.resolvePrompt(MODE_REMINDER_ASK_FILE)
             .replace(LEADING_COMMENT, "")
             .trim()
             .let { "【模式提醒】$it" }
@@ -1334,7 +1334,7 @@ class StatefulAgentWorkflow @Inject constructor(
             .replace(LEADING_COMMENT, "")
             .trim()
         AgentMode.BUILD -> "\n\n【模式切换】计划已获用户批准，你已切换到 BUILD（构建）模式，可以开始执行计划。"
-        AgentMode.AUTO -> "\n\n【模式切换】计划已获用户批准，你已恢复到 AUTO（自动）模式，可以开始执行计划（工具调用将自动放行）。"
+        AgentMode.ASK -> "\n\n【模式切换】计划已获用户批准，你已恢复到 ASK（提问）模式：保持只读，仅围绕用户后续提问作答，不要实施变更。"
     }
 
     /** 用户在外部（界面）手动切换模式时拼进工具结果的提示；与 AI 自切的 [buildModeSwitchNotice] 区分，避免误称「计划已获批准」。 */
@@ -1343,7 +1343,7 @@ class StatefulAgentWorkflow @Inject constructor(
             .replace(LEADING_COMMENT, "")
             .trim()
         AgentMode.BUILD -> "\n\n【模式切换】用户已将模式切换为 BUILD（构建）模式，可以正常执行写操作。"
-        AgentMode.AUTO -> "\n\n【模式切换】用户已将模式切换为 AUTO（自动）模式。"
+        AgentMode.ASK -> "\n\n【模式切换】用户已将模式切换为 ASK（提问）模式：保持只读，仅作答与探索，不要实施变更。"
     }
 
     private suspend fun requestPermissionIfNeeded(

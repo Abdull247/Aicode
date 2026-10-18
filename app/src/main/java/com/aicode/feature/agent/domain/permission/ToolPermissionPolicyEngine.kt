@@ -13,24 +13,32 @@ import javax.inject.Singleton
  * 工具授权策略引擎：在弹窗之前评估一次工具调用应「自动放行 / 自动拒绝 / 询问」，并在用户选择
  * 「始终允许」后把规则记忆下来。
  *
+ * 会话模式（[com.aicode.feature.agent.domain.model.AgentMode]）与授权挡位
+ * （[CommandAuthLevel]）解耦，各司其职（对齐 Claude Code 的 Build/Plan/Ask）：
+ * - ASK（提问）：只读问答沙盒，一切写操作硬拒绝；AI 不得自行切换计划模式。
+ * - PLAN（计划）：只读规划沙盒，一切写操作硬拒绝；退出时经计划审查面板批准才进入构建。
+ * - BUILD（构建）：完整工具集；授权口径**完全由设置决定**——按「命令授权挡位」分流
+ *   （规则拦截 / 自主执行 / 完全权限），不再有模式级「全放行」开关（原 AUTO 模式的职责
+ *   由「完全权限」挡位承担）。
+ *
  * 评估顺序（Bash，BUILD 模式）：
  *   0) 灾难性 rm 防护：删除根目录/系统关键目录/工作区根目录等 → 硬拒绝（可凭 elevate 参数降级为一次性授权）；
  *   1) Shizuku 高危工具：一律弹窗且不可记忆；
  *   2) 可静态判定且每段都命中内置只读白名单（ls/git status 等）→ 自动放行；
  *   3) 按「命令授权挡位」（[CommandAuthLevel]）分流：
  *      - 规则拦截（默认）：命中任一启用的高危拦截规则（见 [HighRiskRuleMatcher]）→ ASK 人工确认；
- *        命令不可静态判定（含命令替换/分组/绝对路径重定向等）→ ASK 兜底；其余 → ALLOW；
+ *        命令不可静态判定 → 对原文做破坏特征扫描（宽松版 [looksDestructiveLoose]），
+ *        无破坏特征 ALLOW，有破坏特征 ASK；其余 → ALLOW；
  *      - 自主执行：一律 ASK 并标记 [EvalResult.aiReviewable]，由工作流层先交「AI 命令审查器」评审，
  *        通过直接放行，拒绝/不确定/失败回退人工弹窗；
- *      - 完全权限：直接 ALLOW（仅保留灾难防护；未开「禁用安全拦截」时，
- *        不可静态判定且疑似破坏性的命令仍按 elevate 流程拦截）。
+ *      - 完全权限：直接 ALLOW，仅保留步骤 0 的灾难防护（可提权；「禁用安全拦截」开启时也关闭）。
  *
  * 命令不再支持「始终允许」记忆：旧的项目/全局 ALLOW 规则会先于挡位生效，等于绕过高危拦截。
  * 非 shell 工具（文件读写/编辑等）按整工具（pattern=`*`）匹配，保留「始终允许此工具」记忆
  * （这类工具无高危规则可匹配，去掉记忆会导致每次写文件都弹窗）。
  *
- * [SHIZUKU_TOOL]（Shizuku）按高危处理：一律 ASK 且不可记忆；
- * AUTO 模式也不自动放行（除非已开启「禁用安全拦截」）。
+ * [SHIZUKU_TOOL]（Shizuku）按高危处理：一律 ASK 且不可记忆；ASK/PLAN 模式下直接拒绝。
+ * 「禁用安全拦截」开关对全部模式生效：开启后灾难性 rm 防护与 Shizuku 逐次确认一并关闭。
  */
 @Singleton
 class ToolPermissionPolicyEngine @Inject constructor(
@@ -74,7 +82,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
         private val BROWSER_READ_ONLY_ACTIONS = setOf("getText", "getHtml", "getBackbone", "screenshot", "console", "wait", "listTabs")
 
         /**
-         * 提权参数：非 AUTO 模式下，命令因内置安全防护（灾难性 rm）被拒时，
+         * 提权参数：命令因内置安全防护（灾难性 rm）被拒时，
          * 可在调用时置为 true 重试，把硬拒绝降级为一次性用户授权。
          */
         const val ELEVATE_ARG = "elevate"
@@ -91,6 +99,15 @@ class ToolPermissionPolicyEngine @Inject constructor(
         const val REASON_RM_TMP = "安全防护：禁止执行高危删除操作（系统临时目录整体删除）"
         const val REASON_RM_SYSTEM_DIR = "安全防护：禁止执行高危删除操作（系统关键目录删除）"
 
+        const val REASON_PLAN_DENY =
+            "当前处于 PLAN（计划）模式，系统物理沙盒已禁止修改系统状态或执行写操作。请在计划模式下仅调用只读工具探索代码，不要尝试修改文件或执行命令。"
+
+        const val REASON_ASK_DENY =
+            "当前处于 ASK（提问）模式，系统物理沙盒已禁止修改系统状态或执行写操作。请在提问模式下仅做只读问答与探索；如需实施变更，请提示用户切换到「构建」或「计划」模式。"
+
+        const val REASON_ASK_NO_PLAN_SWITCH =
+            "当前处于 ASK（提问）模式，AI 不得自行切换计划模式。如需规划，请由用户在界面手动切换到「计划」模式。"
+
         /** 相对/通配类删除目标（归一化后判定）：整体删除当前目录或任意内容。 */
         val RELATIVE_WILDCARD_TARGETS = setOf("*", ".*", ".", "..", "../*", "../.*")
 
@@ -105,9 +122,6 @@ class ToolPermissionPolicyEngine @Inject constructor(
             "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib64", "/lost+found",
             "/media", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin", "/srv", "/sys", "/usr", "/var"
         )
-
-        const val REASON_UNANALYZABLE_DESTRUCTIVE =
-            "安全防护：命令含命令替换、子 shell 或绝对路径重定向等无法静态判定的构造，且疑似破坏性操作，无法确认安全"
 
         /** 疑似破坏性程序（仅在命令不可静态判定时用于保守拦截）。 */
         val DESTRUCTIVE_PROGRAM = Regex(
@@ -137,34 +151,19 @@ class ToolPermissionPolicyEngine @Inject constructor(
     suspend fun evaluate(tool: AgentTool?, toolName: String, args: Map<String, JsonElement>, mode: com.aicode.feature.agent.domain.model.AgentMode): EvalResult {
         val capabilities = tool?.effectiveCapabilities(args).orEmpty()
         if (mode == com.aicode.feature.agent.domain.model.AgentMode.PLAN && isDangerousTool(toolName, args, capabilities)) {
-            return EvalResult(Verdict.DENY, emptyList(), denyReason = "当前处于 PLAN（计划）模式，系统物理沙盒已禁止修改系统状态或执行写操作。请在计划模式下仅调用只读工具探索代码，不要尝试修改文件或执行命令。")
+            return EvalResult(Verdict.DENY, emptyList(), denyReason = REASON_PLAN_DENY)
         }
 
-        if (mode == com.aicode.feature.agent.domain.model.AgentMode.AUTO) {
-            // AUTO 模式放行所有权限；灾难性 rm 防护（根目录/系统目录删除）默认保留，
-            // 可在「工具授权」设置中关闭（禁用安全拦截）。遭遇拦截时仍可凭 elevate 参数提权重试。
-            val safetyDisabled = toolSafetySettings.isSafetyInterceptionDisabled()
-            if (!safetyDisabled && isShellTool(toolName, args)) {
-                val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
-                if (command != null) {
-                    val analysis = ShellCommandParser.analyze(command)
-                    checkCatastrophicRm(analysis.segments)?.let { return elevationOrDeny(it, args) }
-                    // 命令替换/子 shell/绝对路径重定向等无法静态判定的构造，删除目标不可知；
-                    // 若同时疑似破坏性，宁可拦下（可提权），避免绕过安全防护。
-                    // 破坏性判定必须用宽松版 [looksDestructiveLoose]：裸 `>` 一律算破坏过于
-                    // 粗糙——AI 排查类命令几乎条条带 `2>/dev/null`，会把无伤大雅的只读命令
-                    // （getprop/pidof/cat /proc/... 等）全部误杀。与「规则拦截」挡位
-                    // （evaluateShell 内同一处修复）保持同一口径。
-                    if (!analysis.analyzable && looksDestructiveLoose(command)) {
-                        return elevationOrDeny(REASON_UNANALYZABLE_DESTRUCTIVE, args)
-                    }
-                }
+        if (mode == com.aicode.feature.agent.domain.model.AgentMode.ASK) {
+            // ASK 是纯只读问答模式：写操作与 PLAN 一样硬拒绝；同时禁止 AI 自行切换计划模式，
+            // 模式切换只能由用户在界面完成（planMode 的 MODIFY_SESSION_STATE 能力不在
+            // isDangerousTool 的危险能力集里，需单独拦截，否则会弹窗后被执行）。
+            if (toolName == "planMode") {
+                return EvalResult(Verdict.DENY, emptyList(), denyReason = REASON_ASK_NO_PLAN_SWITCH)
             }
-            // Shizuku 直接操作宿主系统，AUTO 下也不自动放行，仍需逐次确认（除非已开启「禁用安全拦截」）。
-            if (toolName == SHIZUKU_TOOL && !safetyDisabled) {
-                return EvalResult(Verdict.ASK, emptyList(), rememberDisabledReason = REASON_SHIZUKU)
+            if (isDangerousTool(toolName, args, capabilities)) {
+                return EvalResult(Verdict.DENY, emptyList(), denyReason = REASON_ASK_DENY)
             }
-            return EvalResult(Verdict.ALLOW, emptyList())
         }
 
         if (capabilities == setOf(ToolCapability.READ_AGENT_CONFIG)) {
@@ -178,6 +177,9 @@ class ToolPermissionPolicyEngine @Inject constructor(
         }
 
         val level = toolSafetySettings.getCommandAuthLevel()
+        // 「禁用安全拦截」对全部模式生效（原 AUTO 专属开关随 AUTO 一并退场）：
+        // 开启后灾难性 rm 防护与 Shizuku 逐次确认都关闭，命令一律放行。
+        val safetyDisabled = toolSafetySettings.isSafetyInterceptionDisabled()
         return if (isShellTool(toolName, args)) {
             // 仅「规则拦截」挡位需要高危规则集；「完全权限」不再读安全开关（见 evaluateShell）。
             val highRiskRules = if (level == CommandAuthLevel.RULE_BASED) highRiskRulesRepo.getRulesOnce() else emptyList()
@@ -185,7 +187,8 @@ class ToolPermissionPolicyEngine @Inject constructor(
                 args,
                 forceAsk = toolName == SHIZUKU_TOOL,
                 level = level,
-                highRiskRules = highRiskRules
+                highRiskRules = highRiskRules,
+                safetyDisabled = safetyDisabled
             )
         } else {
             evaluateGeneric(toolName, capabilities, level)
@@ -402,7 +405,8 @@ class ToolPermissionPolicyEngine @Inject constructor(
         args: Map<String, JsonElement>,
         forceAsk: Boolean = false,
         level: CommandAuthLevel,
-        highRiskRules: List<HighRiskRule>
+        highRiskRules: List<HighRiskRule>,
+        safetyDisabled: Boolean = false
     ): EvalResult {
         val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
             ?: return EvalResult(Verdict.ASK, emptyList())
@@ -410,14 +414,17 @@ class ToolPermissionPolicyEngine @Inject constructor(
         val analysis = ShellCommandParser.analyze(command)
 
         // 0) rm 高危操作防护：禁止直接删除系统根目录、工作区根目录或系统关键目录。
-        //    携带提权参数时降级为一次性用户授权。所有挡位共用。
-        val catastrophicReason = checkCatastrophicRm(analysis.segments)
-        if (catastrophicReason != null) {
-            return elevationOrDeny(catastrophicReason, args)
+        //    携带提权参数时降级为一次性用户授权。所有挡位共用；
+        //    「禁用安全拦截」开启时跳过（原为 AUTO 专属开关，现对全模式生效）。
+        if (!safetyDisabled) {
+            val catastrophicReason = checkCatastrophicRm(analysis.segments)
+            if (catastrophicReason != null) {
+                return elevationOrDeny(catastrophicReason, args)
+            }
         }
 
-        // 1) Shizuku 高危工具：无论内置白名单，一律弹窗且不可记忆。
-        if (forceAsk) {
+        // 1) Shizuku 高危工具：无论内置白名单，一律弹窗且不可记忆（关闭安全拦截时除外）。
+        if (forceAsk && !safetyDisabled) {
             return EvalResult(Verdict.ASK, emptyList(), rememberDisabledReason = REASON_SHIZUKU)
         }
 
