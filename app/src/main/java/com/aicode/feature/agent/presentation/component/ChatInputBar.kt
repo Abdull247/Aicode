@@ -1069,12 +1069,12 @@ private fun AgentModeChip(
     onClick: () -> Unit
 ) {
     val chipColor = when (mode) {
-        AgentMode.BUILD -> MaterialTheme.colorScheme.semanticColors.success
+        AgentMode.BUILD -> MaterialTheme.semanticColors.success
         AgentMode.PLAN -> MaterialTheme.colorScheme.primaryContainer
         AgentMode.ASK -> MaterialTheme.colorScheme.tertiaryContainer
     }
     val chipTextColor = when (mode) {
-        AgentMode.BUILD -> MaterialTheme.colorScheme.semanticColors.onSuccess
+        AgentMode.BUILD -> MaterialTheme.semanticColors.onSuccess
         AgentMode.PLAN -> MaterialTheme.colorScheme.onPrimaryContainer
         AgentMode.ASK -> MaterialTheme.colorScheme.onTertiaryContainer
     }
