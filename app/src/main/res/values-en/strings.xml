@@ -429,6 +429,7 @@
     <!-- About -->
     <string name="about_version">Version</string>
     <string name="about_github_repo">GitHub Repository</string>
+    <string name="about_telegram_group">Telegram Group</string>
     <string name="about_license">Open Source License</string>
     <string name="about_description">AI-powered code editor running on Android · Built-in Terminal · AI Agent · MCP Protocol</string>
     <string name="about_check_update">Check for updates</string>

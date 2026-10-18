@@ -1,9 +1,11 @@
 package com.aicode.feature.settings.presentation.component
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -50,6 +52,7 @@ import compose.icons.feathericons.Check
 import compose.icons.feathericons.Github
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.Send
 import compose.icons.feathericons.Tag
 
 /**
@@ -146,11 +149,18 @@ internal fun AboutSection(
                 }
             )
             SettingsDivider()
-            // GitHub 仓库
+            // GitHub 仓库（本仓库，非上游）
             SettingsRow(
                 icon = FeatherIcons.Github,
                 title = stringResource(R.string.about_github_repo),
                 onClick = { openUrl(context, GITHUB_REPO_URL) }
+            )
+            SettingsDivider()
+            // TG 交流群：优先唤起 Telegram App，未安装则打开网页版
+            SettingsRow(
+                icon = FeatherIcons.Send,
+                title = stringResource(R.string.about_telegram_group),
+                onClick = { openTelegram(context, TELEGRAM_GROUP_URL) }
             )
             SettingsDivider()
             // 许可证
@@ -394,6 +404,21 @@ private fun loadAppIconBitmap(context: Context): ImageBitmap? {
     }.getOrNull()
 }
 
-private const val GITHUB_REPO_URL = "https://github.com/jieapi/aicode"
-private const val LICENSE_URL = "https://github.com/jieapi/aicode/blob/main/LICENSE"
+private const val GITHUB_REPO_URL = "https://github.com/hwsyyds666/Aicode-Glass"
+private const val LICENSE_URL = "https://github.com/hwsyyds666/Aicode-Glass/blob/main/LICENSE"
+private const val TELEGRAM_GROUP_URL = "https://t.me/maoleikernel"
 private const val ICON_PX_DP = 48
+
+/**
+ * 打开 Telegram 交流群：优先用 tg:// scheme 唤起 Telegram App（按域名直达群组），
+ * 未安装 App（ActivityNotFoundException）时回退 t.me 网页版，由系统浏览器打开。
+ */
+private fun openTelegram(context: Context, webUrl: String) {
+    val domain = webUrl.removePrefix("https://t.me/")
+    val appLaunched = runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=$domain")))
+    }.isSuccess
+    if (!appLaunched) {
+        openUrl(context, webUrl)
+    }
+}

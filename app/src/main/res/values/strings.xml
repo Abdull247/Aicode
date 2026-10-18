@@ -429,6 +429,7 @@
     <!-- About -->
     <string name="about_version">版本</string>
     <string name="about_github_repo">GitHub 仓库</string>
+    <string name="about_telegram_group">TG 交流群</string>
     <string name="about_license">开源许可证</string>
     <string name="about_description">在 Android 设备上运行的 AI 驱动代码编辑器 · 内置终端 · AI Agent · MCP 协议</string>
     <string name="about_check_update">检查更新</string>
