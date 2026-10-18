@@ -116,6 +116,7 @@ import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Map
 import compose.icons.feathericons.Maximize
 import compose.icons.feathericons.MessageCircle
+import compose.icons.feathericons.Play
 import compose.icons.feathericons.Minimize
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
