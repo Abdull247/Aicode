@@ -100,6 +100,22 @@ interface FileAccessProvider {
     }
 
     /**
+     * 批量读取多个文件的前 [maxBytes] 个字符（按字符截断，不保证 UTF-8 边界对齐——
+     * 仅用于解析 frontmatter 等只关心文件头的场景）。
+     *
+     * 默认实现 = [readFiles] 后逐条截断；真机 ROOT / SFTP 这类「一次调用 = 一次跨进程或跨网络往返」的
+     * 通道**必须**覆写为一次往返批量取回：按技能名定位技能要读上百个 SKILL.md 的文件头，
+     * 逐个读会退化成上百次子进程 fork（每个数十~数百毫秒），直接把 loadSkill 拖到 ANR。
+     * 与 [readFiles] 同一套返回约定：读取失败的条目缺席，不抛。
+     */
+    fun readFileHeads(paths: List<String>, maxBytes: Int): Map<String, String> {
+        if (paths.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<String, String>(paths.size)
+        for (p in paths) runCatching { readFile(p) }.onSuccess { out[p] = it.take(maxBytes) }
+        return out
+    }
+
+    /**
      * 读取文件原始字节。供 [ViewImageTool] 等需要二进制数据的工具使用。
      * 远程模式下若调用方需要本地文件路径，改用 [copyToLocal]；文件过大时抛 [RemoteOutputTooLargeException]。
      */

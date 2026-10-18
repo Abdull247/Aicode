@@ -55,6 +55,9 @@ class DelegatingFileAccess @Inject constructor(
 
     override fun readFiles(paths: List<String>): Map<String, String> = delegate().readFiles(paths)
 
+    override fun readFileHeads(paths: List<String>, maxBytes: Int): Map<String, String> =
+        delegate().readFileHeads(paths, maxBytes)
+
     override fun readBytes(path: String): ByteArray = delegate().readBytes(path)
 
     override fun writeBytes(path: String, bytes: ByteArray, overwrite: Boolean) =

@@ -19,5 +19,5 @@ class ProjectDirectorySkillSource @Inject constructor(
     override fun listSkills(): List<Skill> = SkillDirectoryScanner.scan(fileAccess, skillsRoot)
 
     override fun loadInstructions(name: String): String? =
-        listSkills().firstOrNull { it.name.equals(name, ignoreCase = true) }?.instructions
+        SkillDirectoryScanner.locateAndRead(fileAccess, skillsRoot, name)
 }

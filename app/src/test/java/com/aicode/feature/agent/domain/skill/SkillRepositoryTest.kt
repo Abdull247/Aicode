@@ -33,34 +33,27 @@ class SkillRepositoryTest {
 
     @Test
     fun loadInstructions_projectOverridesSameNameWithDifferentBody() {
-        val global = skill("same").copy(instructions = "global instructions")
-        val project = skill("same").copy(instructions = "project instructions")
-        every { globalSource.listSkills() } returns listOf(global)
-        every { projectSource.listSkills() } returns listOf(project)
+        every { globalSource.loadInstructions("same") } returns "global instructions"
+        every { projectSource.loadInstructions("same") } returns "project instructions"
 
-        val listed = repository.listSkills().single()
-        assertEquals(project, listed)
-        assertEquals("project instructions", repository.loadInstructions(listed.name))
+        assertEquals("project instructions", repository.loadInstructions("same"))
+        verify(exactly = 1) { projectSource.loadInstructions("same") }
         verify(exactly = 0) { globalSource.loadInstructions(any()) }
     }
 
     @Test
     fun loadInstructions_projectOverridesCaseInsensitiveName() {
-        val global = skill("MixedCase").copy(instructions = "global instructions")
-        val project = skill("mixedcase").copy(instructions = "project instructions")
-        every { globalSource.listSkills() } returns listOf(global)
-        every { projectSource.listSkills() } returns listOf(project)
+        every { globalSource.loadInstructions(any()) } returns "global instructions"
+        every { projectSource.loadInstructions(any()) } returns "project instructions"
 
-        assertEquals(listOf(project), repository.listSkills())
         assertEquals("project instructions", repository.loadInstructions("MIXEDCASE"))
         verify(exactly = 0) { globalSource.loadInstructions(any()) }
     }
 
     @Test
     fun loadInstructions_fallsBackToGlobalWhenProjectHasNoMatch() {
-        val global = skill("GlobalOnly").copy(instructions = "global instructions")
-        every { globalSource.listSkills() } returns listOf(global)
-        every { projectSource.listSkills() } returns listOf(skill("other"))
+        every { projectSource.loadInstructions("GLOBALONLY") } returns null
+        every { globalSource.loadInstructions("GLOBALONLY") } returns "global instructions"
 
         assertEquals("global instructions", repository.loadInstructions("GLOBALONLY"))
         verify(exactly = 1) { projectSource.loadInstructions("GLOBALONLY") }
@@ -69,8 +62,8 @@ class SkillRepositoryTest {
 
     @Test
     fun loadInstructions_returnsNullWhenNeitherSourceHasMatch() {
-        every { globalSource.listSkills() } returns listOf(skill("global"))
-        every { projectSource.listSkills() } returns listOf(skill("project"))
+        every { projectSource.loadInstructions("missing") } returns null
+        every { globalSource.loadInstructions("missing") } returns null
 
         assertNull(repository.loadInstructions("missing"))
         verify(exactly = 1) { projectSource.loadInstructions("missing") }
@@ -79,11 +72,10 @@ class SkillRepositoryTest {
 
     @Test
     fun loadInstructions_disabledNameBlocksBothSourcesCaseInsensitively() {
-        every { globalSource.listSkills() } returns listOf(skill("MixedCase"))
-        every { projectSource.listSkills() } returns listOf(skill("mixedcase"))
         every { config.disabledNames() } returns setOf("mixedcase")
+        every { projectSource.loadInstructions(any()) } returns "project instructions"
+        every { globalSource.loadInstructions(any()) } returns "global instructions"
 
-        assertTrue(repository.listSkills().isEmpty())
         assertNull(repository.loadInstructions("MIXEDCASE"))
         verify(exactly = 0) { projectSource.loadInstructions(any()) }
         verify(exactly = 0) { globalSource.loadInstructions(any()) }

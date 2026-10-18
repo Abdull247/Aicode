@@ -61,6 +61,12 @@ class DeviceRootFileAccess @Inject constructor(
         /** 单次 shell 输出累积上限（字节）：8MB 文件的 base64 ≈ 11.2MB，留余量到 12MB。 */
         const val MAX_OUTPUT_BYTES = 12 * 1024 * 1024
 
+        /**
+         * 文件头批量读取的单批预算（字节）：头部只有几千字节，一次 su 往返即可取回上百个技能的文件头；
+         * 受 [MAX_OUTPUT_BYTES] 约束（base64 放大约 1/3，取一半留余量）。
+         */
+        const val HEAD_READ_BUDGET_BYTES = 4L * 1024 * 1024
+
         /** 常规操作超时（毫秒）。 */
         const val DEFAULT_TIMEOUT_MS = 60_000L
 
@@ -230,8 +236,57 @@ class DeviceRootFileAccess @Inject constructor(
             stdin = realPaths.joinToString("\n").toByteArray(Charsets.UTF_8),
             timeoutMs = LIST_TIMEOUT_MS
         )
-        // 输出按「真实路径行 + base64 行」成对排列，与输入顺序一致；读失败时为空白行，跳过即可。
-        val lines = r.output.lineSequence().toList()
+        return parsePathContentPairs(r.output, realPaths, paths)
+    }
+
+    /**
+     * 文件头批量读取：一次 `su -c` 子进程取回整批文件的前 [maxBytes] 字节（`path` 行 + base64 行交替输出）。
+     *
+     * 与 [readFilesChunk] 同一套协议，区别是只 `head -c` 取文件头——按 frontmatter 的 name 定位技能时，
+     * 上百个 SKILL.md 只需要文件头即可匹配，不必把全部正文拉过 shell 管道。单批按累计头部预算切分
+     * （[HEAD_READ_BUDGET_BYTES]），小文件一批搞定，仍然是一次 su 往返。
+     */
+    override fun readFileHeads(paths: List<String>, maxBytes: Int): Map<String, String> {
+        if (paths.isEmpty() || maxBytes <= 0) return emptyMap()
+        val out = LinkedHashMap<String, String>(paths.size)
+        val chunk = mutableListOf<String>()
+        var budget = 0L
+        for (p in paths) {
+            chunk.add(p)
+            budget += maxBytes
+            if (budget >= HEAD_READ_BUDGET_BYTES) {
+                out.putAll(readFileHeadsChunk(chunk, maxBytes))
+                chunk.clear()
+                budget = 0
+            }
+        }
+        if (chunk.isNotEmpty()) out.putAll(readFileHeadsChunk(chunk, maxBytes))
+        return out
+    }
+
+    private fun readFileHeadsChunk(paths: List<String>, maxBytes: Int): Map<String, String> {
+        val realPaths = paths.map { resolve(it) }
+        val r = sh(
+            "while IFS= read -r p; do " +
+                "printf '%s\\n' \"\$p\"; " +
+                "head -c $maxBytes \"\$p\" 2>/dev/null | base64 2>/dev/null | tr -d '\\n'; printf '\\n'; " +
+                "done",
+            stdin = realPaths.joinToString("\n").toByteArray(Charsets.UTF_8),
+            timeoutMs = LIST_TIMEOUT_MS
+        )
+        return parsePathContentPairs(r.output, realPaths, paths)
+    }
+
+    /**
+     * 解析批量读取的输出：「真实路径行 + base64 行」成对排列，与输入顺序一致；
+     * 读失败（空行 / base64 坏块 / 超上限跳过）的条目缺席。
+     */
+    private fun parsePathContentPairs(
+        output: String,
+        realPaths: List<String>,
+        paths: List<String>
+    ): Map<String, String> {
+        val lines = output.lineSequence().toList()
         val byRealPath = LinkedHashMap<String, String>(lines.size / 2)
         var i = 0
         while (i + 1 < lines.size) {
