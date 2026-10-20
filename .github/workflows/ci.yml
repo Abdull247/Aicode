@@ -96,6 +96,14 @@ jobs:
       - name: Build universal debug (smoke)
         run: ./gradlew :app:assembleUniversalDebug --stacktrace
 
+      # 产物上传到 Actions Artifacts,便于真机安装调试包。
+      - name: Upload universal debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicode-universal-debug-${{ github.sha }}
+          path: app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          if-no-files-found: error
+
       # 单元测试（app/src/test 下的 Kotlin 单测）。
       # 只跑 universal debug 变体：单测逻辑与 flavor 无关（flavor 仅影响 abiFilters/assets），
       # 跑全 flavor 6 变体是重复编译，无额外覆盖。
