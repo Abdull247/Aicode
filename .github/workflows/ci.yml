@@ -22,6 +22,7 @@ on:
       - 'docs-site/**'
       - 'LICENSE'
       - '.gitignore'
+  workflow_dispatch:
 
 # 同分支新提交到来时取消正在跑的旧 run，省 CI 额度。
 concurrency:
