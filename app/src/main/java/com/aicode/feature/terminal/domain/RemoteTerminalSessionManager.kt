@@ -1,7 +1,9 @@
 package com.aicode.feature.terminal.domain
 
+import android.content.Context
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.container.RemoteSshConnection
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.ExecutionModeHolder
 import com.aicode.feature.workspace.data.repository.WorkspaceRepository
@@ -32,6 +34,7 @@ private const val DEFAULT_ROWS = 24
  */
 @Singleton
 class RemoteTerminalSessionManager @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val connection: RemoteSshConnection,
     private val modeHolder: ExecutionModeHolder,
     private val workspaceRepository: WorkspaceRepository
@@ -187,8 +190,20 @@ class RemoteTerminalSessionManager @Inject constructor(
             _activeTabId.value = remaining.lastOrNull()?.id
         }
         bumpRevision()
-        FileLogger.i(TAG, "关闭远程终端标签 $id")
+        notifyTerminalCount()
+        FileLogger.i(TAG, "Closed remote terminal tab $id")
         return true
+    }
+
+    fun closeAllTabs(notify: Boolean = true) {
+        _tabs.value.forEach { tab ->
+            runCatching { tab.session.finishIfRunning() }
+            tab.view = null
+        }
+        _tabs.value = emptyList()
+        _activeTabId.value = null
+        bumpRevision()
+        if (notify) notifyTerminalCount()
     }
 
     fun activate(id: String) {
@@ -224,6 +239,11 @@ class RemoteTerminalSessionManager @Inject constructor(
     private fun addTab(tab: TerminalTab) {
         _tabs.value = _tabs.value + tab
         bumpRevision()
+        notifyTerminalCount()
+    }
+
+    private fun notifyTerminalCount() {
+        TerminalKeepaliveService.setTerminalCount(appContext, _tabs.value.size)
     }
 
     private fun bumpRevision() {

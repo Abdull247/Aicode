@@ -14,6 +14,8 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +38,7 @@ object Radius {
     val mdLarge = 12.dp
     val lg = 14.dp
     val xl = 16.dp
+    val xxl = 24.dp
     val pill = 999.dp
 }
 
@@ -132,7 +135,20 @@ val MaterialTheme.semanticColors: AppSemanticColors
     @ReadOnlyComposable
     get() = LocalAppSemanticColors.current
 
-/** Git 模块统一 8 色泳道调色板 */
+/** Slightly lighter than the page background so chat chrome stays visible without a border. */
+@Composable
+@ReadOnlyComposable
+fun chatChromeColor(): Color {
+    val semantic = MaterialTheme.semanticColors
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    return if (light) {
+        lerp(semantic.pageBackground, Color.White, 0.82f)
+    } else {
+        lerp(semantic.pageBackground, semantic.mutedSurface, 0.72f)
+    }
+}
+
+/** Git graph lane palette. */
 object GitLanePalette {
     val colors = listOf(
         Color(0xFF2563EB), // 1. 经典蓝

@@ -25,7 +25,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,36 +39,34 @@ import androidx.compose.ui.unit.dp
 import com.aicode.R
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
+import com.aicode.core.theme.chatChromeColor
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.settings.presentation.component.ModelLogoIcon
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Terminal
 
-/** 标题栏内容区高度（不含状态栏）：52dp 足够放下一行标题 + 一行模型名与 48dp 触控图标。 */
+/** Header content height excluding the status bar: one title line, one model line, 48dp icons. */
 internal const val CHAT_HEADER_HEIGHT_DP = 52
 
-/** 远程模式额外多一行「连接状态 + token 统计」时的附加高度。 */
+/** Extra height in remote mode for the connection status + token stats row. */
 internal const val CHAT_HEADER_CONNECTION_ROW_DP = 28
 
-/** 标题栏下方待办浮层收起态的消息列表预留高度：单行摘要约 40dp + 与消息流间距 8dp。 */
+/** Collapsed todo bar reserve under the header: ~40dp summary + 8dp gap. */
 internal const val CHAT_TODO_BAR_RESERVE_DP = 48
 
 /**
- * 顶栏：悬浮玻璃层。
+ * Floating top bar over the chat list. It does not consume layout height:
+ * the caller overlays it with Box.align(TopCenter) and the message list only
+ * reserves first-screen space via contentPadding.
  *
- * 关键点：**不再占用布局高度**。调用方用 Box 的 align(TopCenter) 把它盖在聊天内容之上，
- * 消息列表只用 contentPadding 预留首屏空间，滚动时内容从玻璃后面穿过——
- * 这才是「让内容延伸到标题栏背后」，而不是单纯把 padding 调小。
- *
- * 高度固定为 [CHAT_HEADER_HEIGHT_DP]（远程模式再加 [CHAT_HEADER_CONNECTION_ROW_DP]），
- * 不随消息滚动变化，因此不会产生布局跳动；状态栏由 statusBarsPadding 处理，
- * 内容不会压到状态栏图标。文字颜色取自玻璃的自适应亮度，保证透明后仍可读。
+ * Height is fixed at [CHAT_HEADER_HEIGHT_DP] (plus [CHAT_HEADER_CONNECTION_ROW_DP]
+ * in remote mode) so it does not jump while messages stream. Status-bar inset
+ * is handled by statusBarsPadding.
  */
 @Composable
 internal fun ChatHeader(
@@ -90,26 +87,24 @@ internal fun ChatHeader(
     gitActive: Boolean = false,
     browserActive: Boolean = false,
     modifier: Modifier = Modifier,
-    /** 玻璃背景采样层；为 null 时降级为不透明顶栏。 */
+    @Suppress("UNUSED_PARAMETER")
     glassBackdrop: com.styropyr0.prismal.sources.PrismalGlassLayer? = null,
-    /** 背景亮度（0..1），由 rememberGlassLuminance 提供。 */
+    @Suppress("UNUSED_PARAMETER")
     glassLuminance: () -> Float = { 0.5f },
-    /** 玻璃上的前景色：随背景亮度自适应，保证标题与模型名始终可读。 */
+    @Suppress("UNUSED_PARAMETER")
     glassContentColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified
 ) {
-    val hasGlass = glassBackdrop != null
-    val titleColor = if (hasGlass) glassContentColor else MaterialTheme.colorScheme.onBackground
-    val subtitleColor = if (hasGlass) {
-        glassContentColor.copy(alpha = 0.72f)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val titleColor = MaterialTheme.colorScheme.onBackground
+    val subtitleColor = MaterialTheme.colorScheme.onSurfaceVariant
     val headerHeight = (CHAT_HEADER_HEIGHT_DP + if (connectionState != null) CHAT_HEADER_CONNECTION_ROW_DP else 0).dp
+    val headerShape = RoundedCornerShape(Radius.xxl)
     val headerModifier = modifier
         .fillMaxWidth()
         .statusBarsPadding()
-        .height(headerHeight)
         .padding(horizontal = Spacing.xs)
+        .clip(headerShape)
+        .background(chatChromeColor())
+        .height(headerHeight)
 
     val headerContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -119,7 +114,7 @@ internal fun ChatHeader(
                     .height(CHAT_HEADER_HEIGHT_DP.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 大屏常驻侧栏时隐掉汉堡键：侧栏已经摆在左边，再给个开关反而困惑。
+                // Hide the hamburger on large screens: the sidebar is already visible.
                 if (showMenuButton) {
                     IconButton(
                         onClick = onOpenDrawer,
@@ -133,7 +128,7 @@ internal fun ChatHeader(
                 } else {
                     Spacer(modifier = Modifier.width(Spacing.sm))
                 }
-                // 标题 + 模型名压进同一行的两行文本里，避免顶栏被撑成三段。
+                // Title + model name share one column so the header stays two lines.
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = sessionTitle,
@@ -180,7 +175,7 @@ internal fun ChatHeader(
                     onClick = onNavigateToTerminal
                 )
             }
-            // 远程模式：连接状态 + token 统计，仅远程会话时占这一行
+            // Remote mode only: connection status + token stats.
             if (connectionState != null) {
                 Row(
                     modifier = Modifier
@@ -200,25 +195,13 @@ internal fun ChatHeader(
         }
     }
 
-    if (glassBackdrop != null) {
-        com.aicode.core.ui.GlassSurface(
-            backdrop = glassBackdrop,
-            modifier = headerModifier,
-            cornerRadius = 20.dp,
-            blurRadius = 10.dp,
-            tintAlpha = 0.10f,
-            luminance = glassLuminance,
-            content = headerContent
-        )
-    } else {
-        Box(
-            modifier = headerModifier.background(MaterialTheme.colorScheme.background),
-            content = headerContent
-        )
-    }
+    Box(
+        modifier = headerModifier,
+        content = headerContent
+    )
 }
 
-/** 顶栏工作台入口按钮：大屏右栏开着对应内容时高亮，否则看不出点一下是开还是关。 */
+/** Workbench entry in the header: highlighted while the matching right pane is open. */
 @Composable
 private fun WorkbenchIconButton(
     icon: ImageVector,

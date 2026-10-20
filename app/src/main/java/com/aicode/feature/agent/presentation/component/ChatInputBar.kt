@@ -84,6 +84,7 @@ import com.aicode.R
 import com.aicode.core.theme.Brand
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
+import com.aicode.core.theme.chatChromeColor
 import com.aicode.core.theme.semanticColors
 import com.aicode.core.ui.rememberImeBottomInset
 import com.aicode.feature.onboarding.domain.OnboardingStep
@@ -123,17 +124,14 @@ import compose.icons.feathericons.Square
 import compose.icons.feathericons.Shield
 import kotlinx.coroutines.launch
 
-/** 输入框区域蒙版高度：盖住圆角容器，滚动内容滑入时被渐变遮罩；随键盘（IME）上移。 */
+/** Gradient mask height covering the input bar; follows the IME. */
 private val INPUT_BAR_MASK_HEIGHT = 110.dp
 
-/** 输入框高度上下限：超过上限后文本在框内滚动，右上角露出「展开」按钮。与 TextField 的 heightIn 一致。 */
+/** Input field height bounds; overflow scrolls inside the field and shows the expand button. */
 private val INPUT_FIELD_MIN_HEIGHT = 44.dp
 private val INPUT_FIELD_MAX_HEIGHT = 140.dp
 
-/**
- * M3 无标签 TextField 的默认 contentPadding（上下左右各 16dp）。
- * 文本是否超过输入框高度要先用相同约束实测一遍，反推文本可视区域得靠这个值。
- */
+/** Default M3 unlabeled TextField content padding; used to measure overflow. */
 private val INPUT_FIELD_CONTENT_PADDING = 16.dp
 
 @Composable
@@ -176,8 +174,9 @@ internal fun ChatInputBar(
     onRefreshDashboardByButton: () -> Unit = {},
     onDashboardExpandedChange: (Boolean) -> Unit = {},
     todoItems: List<TodoItem> = emptyList(),
-    /** 玻璃背景采样层（与聊天页标题栏共用同一层）；null 时降级为普通容器。 */
+    @Suppress("UNUSED_PARAMETER")
     glassBackdrop: com.styropyr0.prismal.sources.PrismalGlassLayer? = null,
+    @Suppress("UNUSED_PARAMETER")
     glassLuminance: () -> Float = { 0.5f },
     sessionId: String = "",
     onTodoExpandedChange: (Boolean) -> Unit = {},
@@ -268,14 +267,12 @@ internal fun ChatInputBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .graphicsLayer { alpha = contentAlpha }
-                    .padding(horizontal = Spacing.lg)
-                    .padding(bottom = Spacing.md)
-                    .padding(bottom = imeInset)
             ) {
             if (filteredCommands.isNotEmpty()) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg)
                         .padding(bottom = Spacing.sm),
                     shape = RoundedCornerShape(Radius.lg),
                     color = MaterialTheme.colorScheme.surface,
@@ -331,15 +328,17 @@ internal fun ChatInputBar(
             }
 
             if (queuedRequests.isNotEmpty()) {
-                QueuedRequestPanel(
-                    queuedRequests = queuedRequests,
-                    sessionId = sessionId,
-                    forceCollapse = forceCollapseDashboard,
-                    onRemoveQueued = onRemoveQueued,
-                    onMoveQueued = onMoveQueued,
-                    onEditQueued = onEditQueued,
-                    onInterjectQueued = onInterjectQueued
-                )
+                Box(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                    QueuedRequestPanel(
+                        queuedRequests = queuedRequests,
+                        sessionId = sessionId,
+                        forceCollapse = forceCollapseDashboard,
+                        onRemoveQueued = onRemoveQueued,
+                        onMoveQueued = onMoveQueued,
+                        onEditQueued = onEditQueued,
+                        onInterjectQueued = onInterjectQueued
+                    )
+                }
             }
 
             if (todoItems.isNotEmpty()) {
@@ -347,7 +346,8 @@ internal fun ChatInputBar(
                     items = todoItems,
                     sessionId = sessionId,
                     forceCollapse = forceCollapseDashboard,
-                    onExpandedChange = onTodoExpandedChange
+                    onExpandedChange = onTodoExpandedChange,
+                    modifier = Modifier.padding(horizontal = Spacing.lg)
                 )
             }
 
@@ -358,24 +358,24 @@ internal fun ChatInputBar(
                     onRefresh = onRefreshDashboard,
                     onRefreshByButton = onRefreshDashboardByButton,
                     onExpandedChange = onDashboardExpandedChange,
-                    forceCollapse = forceCollapseDashboard
+                    forceCollapse = forceCollapseDashboard,
+                    modifier = Modifier.padding(horizontal = Spacing.lg)
                 )
             }
 
-            // 工具栏与输入框合并成一个统一的玻璃 Surface（原来背景/描边就在这层）：
-            // 不再有多张彼此独立的卡片，模式 / 模型 / 附件 / 发送与文本域同属一块玻璃。
-            com.aicode.core.ui.GlassSurface(
-                backdrop = glassBackdrop,
+            val inputBarShape = RoundedCornerShape(topStart = Radius.xxl, topEnd = Radius.xxl)
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = Radius.lg,
-                blurRadius = 12.dp,
-                tintAlpha = 0.14f,
-                luminance = glassLuminance
+                shape = inputBarShape,
+                color = chatChromeColor(),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
             ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+                    .padding(bottom = imeInset)
             ) {
                 PendingAttachmentPreviewList(
                     attachments = pendingAttachments,
@@ -441,7 +441,7 @@ internal fun ChatInputBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                        .padding(horizontal = Spacing.xs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(

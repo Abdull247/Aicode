@@ -334,8 +334,20 @@ class TerminalSessionManager @Inject constructor(
         bumpRevision()
 
         if (tab.isBackground) maybeStopKeepalive(tab)
-        FileLogger.i(TAG, "关闭终端标签 $id")
+        notifyTerminalCount()
+        FileLogger.i(TAG, "Closed terminal tab $id")
         return true
+    }
+
+    fun closeAllTabs(notify: Boolean = true) {
+        _tabs.value.forEach { tab ->
+            runCatching { tab.session.finishIfRunning() }
+            tab.view = null
+        }
+        _tabs.value = emptyList()
+        _activeTabId.value = null
+        bumpRevision()
+        if (notify) notifyTerminalCount()
     }
 
     fun rename(id: String, title: String) {
@@ -430,6 +442,11 @@ class TerminalSessionManager @Inject constructor(
     private fun addTab(tab: TerminalTab) {
         _tabs.value = _tabs.value + tab
         bumpRevision()
+        notifyTerminalCount()
+    }
+
+    private fun notifyTerminalCount() {
+        TerminalKeepaliveService.setTerminalCount(appContext, _tabs.value.size)
     }
 
     private fun writeToSession(session: TerminalSession, text: String) {

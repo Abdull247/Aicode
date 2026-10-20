@@ -276,6 +276,9 @@
     <string name="notification_keepalive_persistent_sessions">Keepalive · terminal tasks: %1$d</string>
     <string name="notification_keepalive_running_sessions">Running terminal tasks: %1$d</string>
     <string name="notification_keepalive_enabled">Keepalive enabled</string>
+    <string name="notification_action_exit">Exit</string>
+    <string name="notification_action_acquire_wakelock">Acquire wakelock</string>
+    <string name="notification_action_release_wakelock">Release wakelock</string>
     <string name="notification_channel_agent_complete">Agent completion notifications</string>
     <string name="notification_channel_agent_complete_desc">Notifications shown when the agent finishes in background</string>
     <string name="settings_app_permissions">App Permissions</string>

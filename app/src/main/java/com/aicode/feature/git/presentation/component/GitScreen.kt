@@ -639,7 +639,7 @@ internal fun EmptyState(text: String) {
     }
 }
 
-/** 非仓库态：文案 + 「初始化 Git 仓库」/「克隆远程仓库」按钮（成功后自动刷新进仓库态）。 */
+/** Empty-repo state: initialize or clone. Success refreshes into the repo tabs. */
 @Composable
 private fun NotARepoState(
     busy: Boolean,
@@ -652,7 +652,9 @@ private fun NotARepoState(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
-            modifier = Modifier.padding(horizontal = Spacing.lg)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg)
         ) {
             Text(
                 stringResource(R.string.git_not_a_repo),
@@ -673,16 +675,23 @@ private fun NotARepoState(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    FilledTonalButton(onClick = onInit) {
+                    FilledTonalButton(
+                        onClick = onInit,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Icon(FeatherIcons.GitBranch, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(Spacing.xs))
                         Text(stringResource(R.string.git_init_repo))
                     }
-                    FilledTonalButton(onClick = { showCloneDialog = true }) {
+                    FilledTonalButton(
+                        onClick = { showCloneDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Icon(FeatherIcons.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(Spacing.xs))
                         Text(stringResource(R.string.git_clone_repo))
