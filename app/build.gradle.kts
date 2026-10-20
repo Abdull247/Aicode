@@ -103,6 +103,12 @@ android {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             }
+            // AGP disables v1 (JAR) signing by default when minSdk >= 24, leaving v2 only.
+            // Some OEM installers and tools (e.g. MT Manager) require the v1 signature, so
+            // force v1+v2+v3 to maximize install compatibility across devices.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
