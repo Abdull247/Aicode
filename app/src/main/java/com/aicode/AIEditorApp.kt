@@ -110,14 +110,14 @@ class AIEditorApp : Application(), Configuration.Provider {
         AppProxy.applyGlobal(base)
         val tag = base.getSharedPreferences(LANG_PREFS, android.content.Context.MODE_PRIVATE)
             .getString(LANG_KEY, null)
-        val context = if (tag.isNullOrBlank()) {
-            base
-        } else {
-            val config = android.content.res.Configuration(base.resources.configuration)
-            config.setLocale(java.util.Locale.forLanguageTag(tag))
-            base.createConfigurationContext(config)
+        val locale = when {
+            tag.isNullOrBlank() -> java.util.Locale.ENGLISH
+            com.aicode.core.util.LanguageRegistry.isSupported(tag) -> java.util.Locale.forLanguageTag(tag)
+            else -> java.util.Locale.ENGLISH
         }
-        super.attachBaseContext(context)
+        val config = android.content.res.Configuration(base.resources.configuration)
+        config.setLocale(locale)
+        super.attachBaseContext(base.createConfigurationContext(config))
     }
 
     /** Hilt 字段注入：在 [onCreate] 的 super 调用后即可用。 */

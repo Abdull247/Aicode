@@ -11,11 +11,11 @@ class FriendlySshErrorTest {
     @Test
     fun connection_refused() {
         assertEquals(
-            "无法连接到 SSH 服务器（连接被拒绝），请确认远程服务器已启动且端口正确",
+            "Cannot reach the SSH server (connection refused). Confirm the host is up and the port is correct",
             friendlySshError(RuntimeException("ECONNREFUSED (Connection refused)"))
         )
         assertEquals(
-            "无法连接到 SSH 服务器（连接被拒绝），请确认远程服务器已启动且端口正确",
+            "Cannot reach the SSH server (connection refused). Confirm the host is up and the port is correct",
             friendlySshError(RuntimeException("Connection refused: 10.0.0.2:22"))
         )
     }
@@ -23,11 +23,11 @@ class FriendlySshErrorTest {
     @Test
     fun unknown_host() {
         assertEquals(
-            "无法连接到 SSH 服务器（未知主机），请检查主机地址",
+            "Cannot reach the SSH server (unknown host). Check the hostname",
             friendlySshError(RuntimeException("UnknownHostException: foo.example.com"))
         )
         assertEquals(
-            "无法连接到 SSH 服务器（未知主机），请检查主机地址",
+            "Cannot reach the SSH server (unknown host). Check the hostname",
             friendlySshError(RuntimeException("unknown host foo"))
         )
     }
@@ -35,11 +35,11 @@ class FriendlySshErrorTest {
     @Test
     fun auth_failed() {
         assertEquals(
-            "SSH 认证失败，请检查用户名和密码",
+            "SSH auth failed. Check the username and password",
             friendlySshError(RuntimeException("Auth fail"))
         )
         assertEquals(
-            "SSH 认证失败，请检查用户名和密码",
+            "SSH auth failed. Check the username and password",
             friendlySshError(RuntimeException("authentication failed"))
         )
     }
@@ -47,7 +47,7 @@ class FriendlySshErrorTest {
     @Test
     fun network_unreachable() {
         assertEquals(
-            "网络不可达，请检查网络连接",
+            "Network is unreachable. Check the connection",
             friendlySshError(RuntimeException("Network is unreachable"))
         )
     }
@@ -55,11 +55,11 @@ class FriendlySshErrorTest {
     @Test
     fun timeout() {
         assertEquals(
-            "连接 SSH 服务器超时，请检查网络或服务器状态",
+            "Timed out connecting to the SSH server. Check the network or server status",
             friendlySshError(RuntimeException("SocketTimeoutException: connect timed out"))
         )
         assertEquals(
-            "连接 SSH 服务器超时，请检查网络或服务器状态",
+            "Timed out connecting to the SSH server. Check the network or server status",
             friendlySshError(RuntimeException("timed out"))
         )
     }
@@ -67,14 +67,14 @@ class FriendlySshErrorTest {
     @Test
     fun not_connected() {
         assertEquals(
-            "SSH 未连接，请等待连接恢复或在设置中检查配置",
+            "SSH is not connected. Wait for it to recover or check Settings",
             friendlySshError(RuntimeException("SSH 未连接"))
         )
     }
 
     @Test
     fun unknown_error_falls_back() {
-        assertEquals("SSH 连接失败: boom", friendlySshError(RuntimeException("boom")))
-        assertEquals("SSH 连接失败: 未知错误", friendlySshError(RuntimeException()))
+        assertEquals("SSH connection failed: boom", friendlySshError(RuntimeException("boom")))
+        assertEquals("SSH connection failed: unknown error", friendlySshError(RuntimeException()))
     }
 }

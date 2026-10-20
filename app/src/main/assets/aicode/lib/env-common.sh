@@ -71,7 +71,7 @@ pkg_add() {
         yum) yum install -y "$@" ;;
         pacman) pacman -Sy --noconfirm "$@" ;;
         *)
-            echo "未支持的包管理器（apk/apt-get/dnf/yum/pacman）" >&2
+            echo "Unsupported package manager (apk/apt-get/dnf/yum/pacman)" >&2
             return 1
             ;;
     esac
@@ -196,7 +196,7 @@ pick_candidate() {
         echo "    $n) $c"
         n=$((n + 1))
     done
-    printf "选择主版本（序号）: "
+    printf "Pick a major version (number): "
     read ans
     case "$ans" in
         ""|*[!0-9]*) PICKED_PKG=$(echo "$cands" | head -1) ;;
@@ -237,7 +237,7 @@ plan_line() {
     line="    · $1 → $2"
     if [ -n "$3" ]; then
         disp=$(echo "$3" | sed 's/-r[0-9]*$//')
-        line="$line（v$disp）"
+        line="$line (v$disp)"
     fi
     echo "$line"
 }
@@ -247,16 +247,16 @@ ask_yn() {
     def="$2"
     while :; do
         if [ "$def" = "y" ]; then
-            printf "%s（默认安装）[Y/n]: " "$1"
+            printf "%s (install by default) [Y/n]: " "$1"
         else
-            printf "%s（默认跳过）[y/N]: " "$1"
+            printf "%s (skip by default) [y/N]: " "$1"
         fi
         read ans
         [ -z "$ans" ] && ans="$def"
         case "$ans" in
             y|Y) return 0 ;;
             n|N) return 1 ;;
-            *) echo "  请输入 y 或 n" ;;
+            *) echo "  Please enter y or n" ;;
         esac
     done
 }
@@ -264,11 +264,11 @@ ask_yn() {
 # ── 列出安装清单并确认：$1 为空格分隔的运行时列表（可为空）；输入 y 返回 0，其余返回 1 ──
 show_plan() {
     echo ""
-    echo "══════════════ 安装清单 ══════════════"
-    echo "  基础工具: $BASE_PKGS"
+    echo "══════════════ Install plan ══════════════"
+    echo "  Base tools: $BASE_PKGS"
     runtimes="$1"
     if [ -n "$runtimes" ]; then
-        echo "  运行时:"
+        echo "  Runtimes:"
         for r in $runtimes; do
             case "$r" in
                 node)   plan_line "Node.js" "$(runtime_install node)" "$(ver_for node)" ;;
@@ -280,10 +280,10 @@ show_plan() {
             esac
         done
     else
-        echo "  运行时: （未选择，仅装基础工具）"
+        echo "  Runtimes: (none selected, base tools only)"
     fi
     echo "══════════════════════════════════════"
-    printf "  输入 y 开始安装，其它键返回菜单: "
+    printf "  Enter y to install, any other key to go back: "
     read ans
     [ "$ans" = "y" ] || [ "$ans" = "Y" ]
 }
@@ -291,27 +291,27 @@ show_plan() {
 # ── 换源交互：列出镜像候选供单选（1=自动探测，中间=指定镜像，最后=不换源），选定后执行换源 ──
 ask_mirror() {
     echo ""
-    echo "选择镜像源："
-    echo "    1) 自动探测（推荐）"
+    echo "Choose a software mirror:"
+    echo "    1) Auto-detect (recommended)"
     n=2
     for m in $MIRRORS; do
         echo "    $n) $m"
         n=$((n + 1))
     done
-    echo "    0) 不换源（保持默认）"
-    printf "输入序号（回车默认 1）: "
+    echo "    0) Keep the default mirror"
+    printf "Enter a number (Enter = 1): "
     read ans
     case "$ans" in
         ""|*[!0-9]*|1)
             pick_mirror
             ;;
         0)
-            echo "保持默认源，不换源。"
+            echo "Keeping the default mirror."
             return 0
             ;;
         *)
             MIRROR=$(echo "$MIRRORS" | awk -v i="$((ans - 1))" '{print $i}')
-            [ -z "$MIRROR" ] && { echo "序号无效，使用自动探测。"; pick_mirror; }
+            [ -z "$MIRROR" ] && { echo "Invalid number, using auto-detect."; pick_mirror; }
             ;;
     esac
     setup_mirror
@@ -321,57 +321,57 @@ ask_mirror() {
 # 返回：0=完成 1=安装失败 2=用户取消（未确认清单）
 install_custom() {
     echo ""
-    echo "自定义安装将同时安装基础工具（$BASE_PKGS）与所选运行时。"
+    echo "Custom install will add base tools ($BASE_PKGS) plus the runtimes you pick."
     echo ""
     ask_mirror
-    echo "正在更新软件包列表..."
-    pkg_update || { echo "${C_RED}更新软件包列表失败，请检查网络后重试。${C_RESET}"; return 1; }
+    echo "Updating package lists..."
+    pkg_update || { echo "${C_RED}Failed to update package lists. Check the network and retry.${C_RESET}"; return 1; }
     echo ""
-    echo "请选择需要安装的依赖"
+    echo "Choose the packages to install"
     runtimes=""
     node_pkg=""; python_pkg=""; java_pkg=""; go_pkg=""; rust_pkg=""; php_pkg=""
-    if ask_yn "是否安装 Node.js？" y; then
-        echo "  Node.js 可用主版本："
+    if ask_yn "Install Node.js?" y; then
+        echo "  Available Node.js major versions:"
         pick_candidate node
         node_pkg=$PICKED_PKG
         runtimes="$runtimes node"
     fi
-    if ask_yn "是否安装 Python 3？" y; then
-        echo "  Python 3 可用主版本："
+    if ask_yn "Install Python 3?" y; then
+        echo "  Available Python 3 major versions:"
         pick_candidate python
         python_pkg=$PICKED_PKG
         runtimes="$runtimes python"
     fi
-    if ask_yn "是否安装 Java？" n; then
-        echo "  Java 可用主版本："
+    if ask_yn "Install Java?" n; then
+        echo "  Available Java major versions:"
         pick_candidate java
         java_pkg=$PICKED_PKG
         runtimes="$runtimes java"
     fi
-    if ask_yn "是否安装 Go？" n; then
-        echo "  Go 可用主版本："
+    if ask_yn "Install Go?" n; then
+        echo "  Available Go major versions:"
         pick_candidate go
         go_pkg=$PICKED_PKG
         runtimes="$runtimes go"
     fi
-    if ask_yn "是否安装 Rust？" n; then
-        echo "  Rust 可用主版本："
+    if ask_yn "Install Rust?" n; then
+        echo "  Available Rust major versions:"
         pick_candidate rust
         rust_pkg=$PICKED_PKG
         runtimes="$runtimes rust"
     fi
-    if ask_yn "是否安装 PHP？" n; then
-        echo "  PHP 可用主版本："
+    if ask_yn "Install PHP?" n; then
+        echo "  Available PHP major versions:"
         pick_candidate php
         php_pkg=$PICKED_PKG
         runtimes="$runtimes php"
     fi
     if [ -z "$runtimes" ]; then
-        echo "未选择任何运行时，将仅安装基础工具（$BASE_PKGS）。"
+        echo "No runtime selected. Only base tools ($BASE_PKGS) will be installed."
     fi
     show_plan "$runtimes" || return 2
     echo ""
-    echo "开始安装所选依赖（可能需要几分钟，请耐心等待）..."
+    echo "Installing selected packages. This may take a few minutes..."
     pkgs="$BASE_PKGS"
     for r in $runtimes; do
         pkgs="$pkgs $(runtime_install "$r")"
@@ -439,7 +439,7 @@ setup_mirror() {
     elif command -v dnf >/dev/null 2>&1; then
         setup_dnf_mirror
     elif command -v yum >/dev/null 2>&1; then
-        echo "yum（RHEL/CentOS）暂不支持自动换源，使用默认源" >&2
+        echo "yum (RHEL/CentOS) does not support auto mirror switch; using the default source" >&2
         return 0
     elif command -v pacman >/dev/null 2>&1; then
         setup_pacman_mirror
@@ -473,7 +473,7 @@ EOF
 setup_apt_mirror() {
     . /etc/os-release 2>/dev/null
     codename="${VERSION_CODENAME:-}"
-    [ -z "$codename" ] && { echo "无法识别 apt 版本代号，跳过换源" >&2; return 1; }
+    [ -z "$codename" ] && { echo "Could not detect the apt codename; skipping mirror switch" >&2; return 1; }
     # ARM 架构（手机常见）的 Ubuntu 包在 ubuntu-ports 仓库（对应 ports.ubuntu.com）；x86 走 ubuntu 主仓库。
     # Debian 主仓库本身含 arm64/armhf，无需 ports。
     arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
@@ -493,7 +493,7 @@ setup_apt_mirror() {
             components="main contrib non-free non-free-firmware"
             security_uri="http://$MIRROR/debian-security/"
             ;;
-        *) echo "不支持的 apt 发行版：$ID，跳过换源" >&2; return 1 ;;
+        *) echo "Unsupported apt distro: $ID; skipping mirror switch" >&2; return 1 ;;
     esac
     # keyring 存在才写 Signed-By；缺 keyring 时 apt 回退 trusted.gpg.d
     signed_by=""
@@ -525,7 +525,7 @@ setup_apt_mirror() {
     fi
     # 验证：update 失败输出原因并恢复原配置
     if ! apt-get update -y; then
-        echo "换源后 apt update 失败，已恢复原源配置" >&2
+        echo "apt update failed after switching mirrors; restored the original sources" >&2
         rm -rf /etc/apt/sources.list.d
         [ -f "$backup_dir/sources.list" ] && cp "$backup_dir/sources.list" /etc/apt/sources.list
         [ -d "$backup_dir/sources.list.d" ] && mv "$backup_dir/sources.list.d" /etc/apt/sources.list.d
@@ -557,7 +557,7 @@ enabled=1
 gpgcheck=1
 EOF
     if ! dnf makecache -y >/dev/null 2>&1; then
-        echo "换源后 dnf makecache 失败，已恢复原 repo 配置" >&2
+        echo "dnf makecache failed after switching mirrors; restored the original repos" >&2
         rm -f /etc/yum.repos.d/fedora.repo /etc/yum.repos.d/fedora-updates.repo
         cp -a "$backup_dir/." /etc/yum.repos.d/ 2>/dev/null
         rm -rf "$backup_dir"
@@ -574,7 +574,7 @@ setup_pacman_mirror() {
 Server = https://$MIRROR/archlinux/\$repo/os/\$arch
 EOF
     if ! pacman -Sy --noconfirm >/dev/null 2>&1; then
-        echo "换源后 pacman -Sy 失败，已恢复原 mirrorlist" >&2
+        echo "pacman -Sy failed after switching mirrors; restored the original mirrorlist" >&2
         [ -f "$backup.backup" ] && mv "$backup.backup" "$backup"
         return 1
     fi
@@ -627,7 +627,7 @@ scenario_name() {
 # 场景安装分发
 install_scenario() {
     fn="install_scenario_$1"
-    if command -v "$fn" >/dev/null 2>&1; then "$fn"; else echo "${C_RED}未知场景：$1${C_RESET}"; return 1; fi
+    if command -v "$fn" >/dev/null 2>&1; then "$fn"; else echo "${C_RED}Unknown scenario: $1${C_RESET}"; return 1; fi
 }
 
 # ── 轻场景安装器（供轻量场景调用）：换源 → 更新索引 → 列出清单确认 → 装包。
@@ -637,12 +637,12 @@ install_light_runtimes() {
     runtimes="$1"
     ask_mirror
     echo ""
-    echo "正在更新软件包列表..."
-    pkg_update || { echo "${C_RED}更新软件包列表失败，请检查网络后重试。${C_RESET}"; return 1; }
+    echo "Updating package lists..."
+    pkg_update || { echo "${C_RED}Failed to update package lists. Check the network and retry.${C_RESET}"; return 1; }
     echo ""
     show_plan "$runtimes" || return 2
     echo ""
-    echo "开始安装（可能需要几分钟，请耐心等待）..."
+    echo "Installing. This may take a few minutes..."
     pkgs="$BASE_PKGS"
     for r in $runtimes; do
         pkgs="$pkgs $(runtime_install "$r")"

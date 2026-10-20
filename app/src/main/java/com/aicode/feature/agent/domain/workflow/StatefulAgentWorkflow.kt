@@ -219,9 +219,9 @@ class StatefulAgentWorkflow @Inject constructor(
 
     private suspend fun getEffectiveProvider(sessionId: String?): AIProvider {
         val config = resolveProviderConfig(sessionId)
-            ?: throw IllegalStateException("尚未配置 AI 供应商，请到设置中添加并选择一个")
-        if (!config.hasUsableApiKey) throw IllegalStateException("「${config.name}」未填写 API Key")
-        if (config.effectiveModel.isBlank()) throw IllegalStateException("「${config.name}」未选择模型")
+            ?: throw IllegalStateException("No AI vendor configured. Add and select one in Settings.")
+        if (!config.hasUsableApiKey) throw IllegalStateException("\"${config.name}\" is missing an API Key")
+        if (config.effectiveModel.isBlank()) throw IllegalStateException("\"${config.name}\" has no model selected")
         return createStandaloneProvider(config, sessionId)
     }
 
@@ -257,9 +257,9 @@ class StatefulAgentWorkflow @Inject constructor(
 
     override suspend fun compactSession(sessionId: String, onEvent: suspend (AgentEvent) -> Unit): Boolean {
         val config = resolveProviderConfig(sessionId)
-            ?: throw IllegalStateException("尚未配置 AI 供应商，请到设置中添加并选择一个")
-        if (!config.hasUsableApiKey) throw IllegalStateException("「${config.name}」未填写 API Key")
-        if (config.effectiveModel.isBlank()) throw IllegalStateException("「${config.name}」未选择模型")
+            ?: throw IllegalStateException("No AI vendor configured. Add and select one in Settings.")
+        if (!config.hasUsableApiKey) throw IllegalStateException("\"${config.name}\" is missing an API Key")
+        if (config.effectiveModel.isBlank()) throw IllegalStateException("\"${config.name}\" has no model selected")
         val provider = createStandaloneProvider(config, sessionId)
         val history = messagePersistenceUseCase.buildHistory(sessionId, "__manual_compress__")
         if (history.size <= 2) return false
@@ -288,7 +288,7 @@ class StatefulAgentWorkflow @Inject constructor(
         // 多 Key 模式下由轮换器决定本次用哪个 Key（会话内粘住，Key 不可用时切下一个并重发）。
         val activeKeys = config.effectiveApiKeys
         provider.apiKey = keyRotator.activeKey(config, sessionId)
-            ?: throw IllegalStateException("「${config.name}」的 Key 均在冷却中，请稍后重试")
+            ?: throw IllegalStateException("All keys for \"${config.name}\" are cooling down. Try again later.")
         // 只有真正的多 Key 才需要自动切换：单 Key 冷却后没有可切换目标，只会把用户锁死一段时间。
         val keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? =
             if (activeKeys.size > 1) {

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
 import com.aicode.feature.agent.domain.model.ChatSession
+import com.aicode.feature.agent.domain.session.SessionUseCase
 import compose.icons.FeatherIcons
 
 /**
@@ -104,7 +105,7 @@ fun ChatSessionRow(
             Spacer(Modifier.width(Spacing.md))
         }
         Text(
-            text = session.title,
+            text = SessionUseCase.displayTitle(session.title),
             style = MaterialTheme.typography.bodyMedium,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,

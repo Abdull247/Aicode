@@ -40,7 +40,7 @@ install_android_sdk() {
     sdk="$HOME/android/sdk"
     mkdir -p "$sdk"
     if [ ! -x "$sdk/cmdline-tools/latest/bin/sdkmanager" ]; then
-        echo "下载 Android commandline-tools..."
+        echo "Downloading Android commandline-tools..."
         (
             cd "$sdk" || exit 1
             rm -rf cmdline-tools-tmp
@@ -51,9 +51,9 @@ install_android_sdk() {
             mv cmdline-tools-tmp/* cmdline-tools/latest/ || exit 1
             rmdir cmdline-tools-tmp
             rm -f clt.zip
-        ) || { echo "${C_RED}commandline-tools 下载/解压失败。${C_RESET}"; return 1; }
+        ) || { echo "${C_RED}Failed to download/extract commandline-tools.${C_RESET}"; return 1; }
     fi
-    jh=$(java_home_dir) || { echo "${C_RED}未找到 JDK 17，无法继续。${C_RESET}"; return 1; }
+    jh=$(java_home_dir) || { echo "${C_RED}JDK 17 not found. Cannot continue.${C_RESET}"; return 1; }
     export JAVA_HOME="$jh"
     export ANDROID_HOME="$sdk" ANDROID_SDK_ROOT="$sdk"
     export PATH="$sdk/cmdline-tools/latest/bin:$sdk/platform-tools:$PATH"
@@ -61,10 +61,10 @@ install_android_sdk() {
     args=""
     for p in $platforms; do args="$args \"platforms;android-$p\""; done
     for b in $buildtools; do args="$args \"build-tools;$b\""; done
-    echo "通过 sdkmanager 安装：$args \"platform-tools\""
+    echo "Installing with sdkmanager: $args \"platform-tools\""
     eval "yes | sdkmanager --install $args \"platform-tools\"" || {
         unset SDK_TEST_BASE_URL
-        echo "${C_RED}sdkmanager 安装失败，可检查网络后重试。${C_RESET}"
+        echo "${C_RED}sdkmanager install failed. Check the network and retry.${C_RESET}"
         return 1
     }
     unset SDK_TEST_BASE_URL
@@ -80,9 +80,9 @@ install_android_tools_arm64() {
     zip="$HOME/.aicode-cache/android-sdk-tools-static-aarch64.zip"
     mkdir -p "$HOME/.aicode-cache"
     if [ ! -f "$zip" ]; then
-        echo "下载 ARM64 原生二进制（aapt2 / adb 等）..."
+        echo "Downloading ARM64 native binaries (aapt2 / adb, etc.)..."
         curl -fL -o "$zip" "$ARM_TOOLS_PROXY_URL" || curl -fL -o "$zip" "$ARM_TOOLS_URL" || {
-            echo "${C_YELLOW}ARM64 二进制下载失败，可在新终端重试（见进阶教程）。${C_RESET}"
+            echo "${C_YELLOW}ARM64 binary download failed. Retry in a new terminal.${C_RESET}"
             return 1
         }
     fi
@@ -96,7 +96,7 @@ install_android_tools_arm64() {
     done
     [ -d "$sdk/platform-tools" ] && cp -pf "$tmp"/platform-tools/* "$sdk/platform-tools/" 2>/dev/null
     chmod +x "$sdk"/build-tools/*/* "$sdk"/platform-tools/* 2>/dev/null
-    echo "已替换 ARM64 原生二进制。"
+    echo "Replaced ARM64 native binaries."
     return 0
 }
 
@@ -106,7 +106,7 @@ write_android_profile() {
     jh=$(java_home_dir)
     mkdir -p /etc/profile.d
     {
-        echo "# AiCode: Android / Kotlin 开发环境（由环境安装工具写入）"
+        echo "# AiCode: Android / Kotlin development environment (written by the setup tool)"
         [ -n "$jh" ] && echo "export JAVA_HOME=\"$jh\""
         echo "export ANDROID_HOME=\"$sdk\""
         echo "export ANDROID_SDK_ROOT=\"$sdk\""

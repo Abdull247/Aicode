@@ -8,9 +8,9 @@ import org.junit.Test
 class LanguageRegistryTest {
 
     @Test
-    fun zh_and_en_are_supported() {
-        assertTrue(LanguageRegistry.isSupported("zh"))
+    fun en_is_supported() {
         assertTrue(LanguageRegistry.isSupported("en"))
+        assertFalse(LanguageRegistry.isSupported("zh"))
     }
 
     @Test
@@ -29,14 +29,14 @@ class LanguageRegistryTest {
     }
 
     @Test
-    fun languages_contain_zh_and_en() {
+    fun languages_contain_en() {
         val tags = LanguageRegistry.languages.map { it.tag }
-        assertTrue(tags.containsAll(listOf("zh", "en")))
+        assertTrue(tags.contains("en"))
+        assertFalse(tags.contains("zh"))
     }
 
     @Test
     fun display_names_are_native() {
-        assertTrue(LanguageRegistry.languages.any { it.tag == "zh" && it.displayName == "中文" })
         assertTrue(LanguageRegistry.languages.any { it.tag == "en" && it.displayName == "English" })
     }
 }

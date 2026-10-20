@@ -59,7 +59,7 @@ class RemoteSftpFileAccess @Inject constructor(
 
     /** 当前选中工作区在远程服务器上的真实路径（如 /data/.../test/111）。 */
     private fun currentWorkspaceRoot(): String {
-        val cfg = connection.config ?: throw IllegalStateException("SSH 未连接")
+        val cfg = connection.config ?: throw IllegalStateException("SSH is not connected")
         // currentPath() 远程模式返回选中工作区的远程绝对路径；未选中时回退到 remoteWorkspacePath
         val path = workspaceRepository.currentPath()
         return if (path.isNotBlank() && path != "/") path else cfg.remoteWorkspacePath.trimEnd('/')

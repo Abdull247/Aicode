@@ -356,7 +356,7 @@ class TerminalSessionManager @Inject constructor(
         }
         containerEngine.ensureInstalled()
         if (!containerEngine.isContainerInstalled()) {
-            throw IllegalStateException("容器未安装（缺少 rootfs/proot）")
+            throw IllegalStateException("Container is not installed (missing rootfs/proot)")
         }
         FileLogger.i(TAG, "容器就绪（耗时 ${System.currentTimeMillis() - startedAt}ms）")
     }

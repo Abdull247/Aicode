@@ -167,14 +167,14 @@ class MainActivity : ComponentActivity() {
         // Hilt 尚未注入，直接从 SharedPreferences 同步读取。
         val tag = newBase.getSharedPreferences("language_prefs_sync", android.content.Context.MODE_PRIVATE)
             .getString("language_tag", null)
-        val context = if (tag.isNullOrBlank()) {
-            newBase
-        } else {
-            val config = android.content.res.Configuration(newBase.resources.configuration)
-            config.setLocale(java.util.Locale.forLanguageTag(tag))
-            newBase.createConfigurationContext(config)
+        val locale = when {
+            tag.isNullOrBlank() -> java.util.Locale.ENGLISH
+            com.aicode.core.util.LanguageRegistry.isSupported(tag) -> java.util.Locale.forLanguageTag(tag)
+            else -> java.util.Locale.ENGLISH
         }
-        super.attachBaseContext(context)
+        val config = android.content.res.Configuration(newBase.resources.configuration)
+        config.setLocale(locale)
+        super.attachBaseContext(newBase.createConfigurationContext(config))
     }
 
     @Suppress("DEPRECATION") // 全局更新 application resources locale，createConfigurationContext 无法替代
@@ -203,16 +203,14 @@ class MainActivity : ComponentActivity() {
                 // 同步更新 Application context 的 Configuration，确保非 Activity 来源的
                 // Resources（如 ViewModel 中 context.getString）也能拿到正确 locale。
                 val app = applicationContext
-                if (tag.isNullOrBlank()) {
-                    // 跟随系统：重置为系统默认 Configuration
-                    val sysConfig = android.content.res.Configuration(resources.configuration)
-                    sysConfig.setLocale(java.util.Locale.getDefault())
-                    app.resources.updateConfiguration(sysConfig, app.resources.displayMetrics)
-                } else {
-                    val config = android.content.res.Configuration(app.resources.configuration)
-                    config.setLocale(java.util.Locale.forLanguageTag(tag))
-                    app.resources.updateConfiguration(config, app.resources.displayMetrics)
+                val locale = when {
+                    tag.isNullOrBlank() -> java.util.Locale.ENGLISH
+                    com.aicode.core.util.LanguageRegistry.isSupported(tag) -> java.util.Locale.forLanguageTag(tag)
+                    else -> java.util.Locale.ENGLISH
                 }
+                val config = android.content.res.Configuration(app.resources.configuration)
+                config.setLocale(locale)
+                app.resources.updateConfiguration(config, app.resources.displayMetrics)
                 recreate()
             }
         }

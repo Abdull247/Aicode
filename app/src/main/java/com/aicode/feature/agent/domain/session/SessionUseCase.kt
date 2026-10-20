@@ -25,7 +25,13 @@ class SessionUseCase @Inject constructor(
         const val LEGACY_PENDING_TOOL_MARKER = "\u23F3"
         /** 历史版本停止 emoji 前缀；UI 剥离结果文本时兼容。 */
         const val LEGACY_STOPPED_TOOL_MARKER = "\u23F9"
-        const val INTERRUPTED_TOOL_TEXT = "执行被中断（应用已关闭）"
+        const val INTERRUPTED_TOOL_TEXT = "Execution interrupted (app was closed)"
+        const val DEFAULT_TITLE = "New Chat"
+
+        fun displayTitle(title: String): String = when (title.trim()) {
+            "新会话", "新对话", DEFAULT_TITLE -> DEFAULT_TITLE
+            else -> title
+        }
     }
 
     /** 冷启动收尾：上次进程被杀时若有工具正在执行，其占位行会永久显示「执行中」。 */
@@ -51,7 +57,7 @@ class SessionUseCase @Inject constructor(
         val now = System.currentTimeMillis()
         return ChatSessionEntity(
             id = UUID.randomUUID().toString(),
-            title = "新会话",
+            title = DEFAULT_TITLE,
             workspacePath = workspacePath,
             createdAt = now,
             updatedAt = now,
@@ -63,7 +69,7 @@ class SessionUseCase @Inject constructor(
 
     fun deriveTitle(request: String): String {
         val clean = request.trim().replace(Regex("\\s+"), " ")
-        return if (clean.length <= TITLE_MAX) clean.ifBlank { "新对话" }
+        return if (clean.length <= TITLE_MAX) clean.ifBlank { DEFAULT_TITLE }
         else clean.take(TITLE_MAX) + "…"
     }
 

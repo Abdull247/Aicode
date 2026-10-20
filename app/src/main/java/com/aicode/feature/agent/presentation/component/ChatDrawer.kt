@@ -55,6 +55,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.aicode.core.ui.AppTextField
 import com.aicode.core.ui.dialogTextFieldColors
+import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
 import androidx.compose.runtime.Composable
@@ -390,7 +391,7 @@ fun ChatDrawerContent(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.chat_delete_session)) },
-            text = { Text(stringResource(R.string.chat_delete_session_confirm, session.title)) },
+            text = { Text(stringResource(R.string.chat_delete_session_confirm, SessionUseCase.displayTitle(session.title))) },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete(session)
@@ -465,7 +466,7 @@ fun ChatDrawerContent(
     }
 
     pendingRename?.let { session ->
-        var renameText by remember(session.id) { mutableStateOf(session.title) }
+        var renameText by remember(session.id) { mutableStateOf(SessionUseCase.displayTitle(session.title)) }
         AlertDialog(
             onDismissRequest = { pendingRename = null },
             title = { Text(stringResource(R.string.chat_rename_session)) },
@@ -485,7 +486,7 @@ fun ChatDrawerContent(
                         onRename(session, renameText)
                         pendingRename = null
                     },
-                    enabled = renameText.isNotBlank() && renameText != session.title
+                    enabled = renameText.isNotBlank() && renameText != SessionUseCase.displayTitle(session.title)
                 ) { Text(stringResource(R.string.common_rename)) }
             },
             dismissButton = {
@@ -1365,7 +1366,7 @@ private fun SessionActionSheet(
                 .padding(bottom = Spacing.xl)
         ) {
             Text(
-                text = session.title,
+                text = SessionUseCase.displayTitle(session.title),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

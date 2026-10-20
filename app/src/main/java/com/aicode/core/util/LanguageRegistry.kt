@@ -20,7 +20,6 @@ object LanguageRegistry {
     const val FOLLOW_SYSTEM = ""
 
     val languages: List<SupportedLanguage> = listOf(
-        SupportedLanguage("zh", "中文"),
         SupportedLanguage("en", "English")
     )
 

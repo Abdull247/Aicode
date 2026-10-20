@@ -116,7 +116,7 @@ class RemoteSshConnection @Inject constructor(
     fun savedHostKeys(): Map<String, String> = hostKeyStore.entries()
     /** 无参 connect：用上次保存的 config 重连。 */
     suspend fun connect() {
-        val cfg = config ?: throw IllegalStateException("未配置 SSH 连接")
+        val cfg = config ?: throw IllegalStateException("SSH connection is not configured")
         connect(cfg)
     }
 
@@ -165,7 +165,7 @@ class RemoteSshConnection @Inject constructor(
 
     /** 开一个 exec session 执行命令。调用方负责关闭返回的 Command。 */
     fun startExecSession(command: String): Session.Command {
-        val client = sshClient ?: throw IllegalStateException("SSH 未连接")
+        val client = sshClient ?: throw IllegalStateException("SSH is not connected")
         val session = client.startSession()
         val cmd = session.exec(command)
         // 立即给远端进程的 stdin 送 EOF：所有调用方只读输出。不关的话，远端按「stdin 是否可读」
@@ -179,13 +179,13 @@ class RemoteSshConnection @Inject constructor(
      * 调用方负责写入并关闭 [Session.Command.outputStream]、读取输出、关闭 session。
      */
     fun startExecSessionWithStdin(command: String): Session.Command {
-        val client = sshClient ?: throw IllegalStateException("SSH 未连接")
+        val client = sshClient ?: throw IllegalStateException("SSH is not connected")
         return client.startSession().exec(command)
     }
 
     /** 开一个新的 Session，供调用方分配 PTY 并启动 shell。调用方负责关闭 Session。 */
     fun startShellSession(): Session {
-        val client = sshClient ?: throw IllegalStateException("SSH 未连接")
+        val client = sshClient ?: throw IllegalStateException("SSH is not connected")
         return client.startSession()
     }
 
@@ -194,7 +194,7 @@ class RemoteSshConnection @Inject constructor(
      * 由 [disconnect] 统一管理。连接失效（未连接/未认证）时丢弃重建，覆盖 SFTP 通道崩溃后的自愈。
      */
     suspend fun sftp(): SFTPClient = sftpLock.withLock {
-        val cfg = config ?: throw IllegalStateException("SSH 未配置")
+        val cfg = config ?: throw IllegalStateException("SSH is not configured")
         sftpClient
             ?.takeIf { sftpSshClient?.isConnected == true && sftpSshClient?.isAuthenticated == true }
             ?.let { return@withLock it }
@@ -457,22 +457,22 @@ fun friendlySshError(e: Throwable): String {
     val msg = e.message.orEmpty()
     return when {
         e is KeyDecryptionFailedException ->
-            "SSH 认证失败：私钥口令不正确或私钥格式不受支持（$msg）"
+            "SSH auth failed: private-key passphrase is wrong or the key format is unsupported ($msg)"
         e is UserAuthException ->
-            "SSH 认证失败：用户名、密码或密钥未被服务器接受（$msg）"
+            "SSH auth failed: username, password, or key was rejected ($msg)"
         "ECONNREFUSED" in msg || "Connection refused" in msg ->
-            "无法连接到 SSH 服务器（连接被拒绝），请确认远程服务器已启动且端口正确"
+            "Cannot reach the SSH server (connection refused). Confirm the host is up and the port is correct"
         "UnknownHost" in msg || "unknown host" in msg ->
-            "无法连接到 SSH 服务器（未知主机），请检查主机地址"
+            "Cannot reach the SSH server (unknown host). Check the hostname"
         "Auth fail" in msg || "authentication" in msg ->
-            "SSH 认证失败，请检查用户名和密码"
+            "SSH auth failed. Check the username and password"
         "Network is unreachable" in msg ->
-            "网络不可达，请检查网络连接"
+            "Network is unreachable. Check the connection"
         "SocketTimeout" in msg || "timed out" in msg ->
-            "连接 SSH 服务器超时，请检查网络或服务器状态"
-        "SSH 未连接" in msg ->
-            "SSH 未连接，请等待连接恢复或在设置中检查配置"
-        else -> "SSH 连接失败: ${e.message ?: "未知错误"}"
+            "Timed out connecting to the SSH server. Check the network or server status"
+        "SSH 未连接" in msg || "SSH is not connected" in msg ->
+            "SSH is not connected. Wait for it to recover or check Settings"
+        else -> "SSH connection failed: ${e.message ?: "unknown error"}"
     }
 }
 

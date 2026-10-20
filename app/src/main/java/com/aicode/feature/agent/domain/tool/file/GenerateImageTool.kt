@@ -244,12 +244,12 @@ class GenerateImageTool @Inject constructor(
         val providerId = imageGenModelSettingsRepository.getImageGenProviderId().trim()
         val model = imageGenModelSettingsRepository.getImageGenModel().trim()
         if (providerId.isEmpty() || model.isEmpty()) {
-            throw IllegalStateException("未配置生图模型：请到「设置 → 默认模型 → 生图模型」中选择支持图像输出的模型（如 gpt-image-1 / dall-e-3）。")
+            throw IllegalStateException("No image model configured. Pick an image-capable model in Settings → Default Models → Image Generation (e.g. gpt-image-1 / dall-e-3).")
         }
         val config = aiProviderRepository.getProviderById(providerId)
-            ?: throw IllegalStateException("生图模型配置的供应商不存在或已被删除，请到「设置 → 默认模型 → 生图模型」重新选择。")
-        if (!config.isEnabled) throw IllegalStateException("生图模型配置的供应商「${config.name}」未启用。")
-        if (!config.hasUsableApiKey) throw IllegalStateException("生图模型配置的供应商「${config.name}」未填写 API Key。")
+            ?: throw IllegalStateException("The image-model vendor is missing or was deleted. Pick again in Settings → Default Models → Image Generation.")
+        if (!config.isEnabled) throw IllegalStateException("Image-model vendor \"${config.name}\" is disabled.")
+        if (!config.hasUsableApiKey) throw IllegalStateException("Image-model vendor \"${config.name}\" is missing an API Key.")
         return config.copy(selectedModel = model)
     }
 

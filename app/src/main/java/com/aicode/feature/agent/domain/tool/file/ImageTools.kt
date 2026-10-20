@@ -290,9 +290,9 @@ class ViewImageTool @Inject constructor(
             }
         }
         val config = resolveCurrentChatConfig(sessionId)
-            ?: throw IllegalStateException("尚未配置 AI 供应商，请到设置中添加并选择一个")
-        if (config.apiKey.isBlank()) throw IllegalStateException("「${config.name}」未填写 API Key")
-        if (config.effectiveModel.isBlank()) throw IllegalStateException("「${config.name}」未选择模型")
+            ?: throw IllegalStateException("No AI vendor configured. Add and select one in Settings.")
+        if (config.apiKey.isBlank()) throw IllegalStateException("\"${config.name}\" is missing an API Key")
+        if (config.effectiveModel.isBlank()) throw IllegalStateException("\"${config.name}\" has no model selected")
         return createStandaloneProvider(config, sessionId)
     }
 
