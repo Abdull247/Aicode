@@ -1,5 +1,7 @@
 package com.aicode.feature.network.domain
 
+import okhttp3.HttpUrl
+
 data class ParsedCurl(
     val method: HttpMethod = HttpMethod.GET,
     val url: String = "",
