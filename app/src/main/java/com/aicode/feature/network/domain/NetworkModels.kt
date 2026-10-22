@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.Base64
+import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 internal val compactJson = Json { ignoreUnknownKeys = true }
 internal val prettyJson = Json {
@@ -23,6 +25,11 @@ const val DEFAULT_AUTH_JSON = "{\n  \"type\": \"none\"\n}"
 const val DEFAULT_TIMEOUT_SECONDS = 30
 const val MIN_TIMEOUT_SECONDS = 1
 const val MAX_TIMEOUT_SECONDS = 120
+const val MAX_JSON_PRETTY_CHARS = 200_000
+const val MAX_JSON_STRUCTURE_CHARS = 120_000
+const val MAX_EDITOR_CHARS = 400_000
+const val MAX_TREE_NODES = 1_500
+const val MAX_TREE_DEPTH = 24
 
 data class NetworkHeader(
     val name: String,
@@ -50,8 +57,15 @@ enum class ResponseViewMode {
 }
 
 enum class JsonViewMode {
-    JSON, TREE
+    JSON, TREE, TABLE
 }
+
+data class TableInputRow(
+    val id: String = UUID.randomUUID().toString(),
+    val key: String = "",
+    val value: String = "",
+    val enabled: Boolean = true
+)
 
 data class JsonTreeNode(
     val key: String,
@@ -116,6 +130,12 @@ fun defaultViewMode(tab: ResponseTab): ResponseViewMode? = when (tab) {
     ResponseTab.METRICS -> null
 }
 
+fun safeJsonViewMode(name: String?): JsonViewMode =
+    JsonViewMode.entries.firstOrNull { it.name == name } ?: JsonViewMode.JSON
+
+fun safeResponseViewMode(name: String?): ResponseViewMode =
+    ResponseViewMode.entries.firstOrNull { it.name == name } ?: ResponseViewMode.JSON
+
 fun normalizeRequestUrl(raw: String): String {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return trimmed
@@ -130,9 +150,12 @@ fun normalizeRequestUrl(raw: String): String {
 fun prettyPrintJson(raw: String): String {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return raw
+    if (trimmed.length > MAX_JSON_PRETTY_CHARS) return trimmed
     return try {
         val element = compactJson.parseToJsonElement(trimmed)
         prettyJson.encodeToString(JsonElement.serializer(), element)
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         raw
     }
@@ -236,12 +259,20 @@ fun parseTimeoutSeconds(raw: String): Int =
 fun jsonToTreeNodes(raw: String): List<JsonTreeNode>? {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return emptyList()
+    if (trimmed.length > MAX_JSON_STRUCTURE_CHARS) return null
     return try {
+        val counter = intArrayOf(0)
         when (val element = compactJson.parseToJsonElement(trimmed)) {
-            is JsonObject -> element.entries.map { (key, value) -> jsonElementToNode(key, value) }
-            is JsonArray -> element.mapIndexed { index, value -> jsonElementToNode("[$index]", value) }
-            else -> listOf(jsonElementToNode("value", element))
+            is JsonObject -> element.entries.map { (key, value) ->
+                jsonElementToNode(key, value, 0, counter)
+            }
+            is JsonArray -> element.mapIndexed { index, value ->
+                jsonElementToNode("[$index]", value, 0, counter)
+            }
+            else -> listOf(jsonElementToNode("value", element, 0, counter))
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         null
     }
@@ -250,37 +281,115 @@ fun jsonToTreeNodes(raw: String): List<JsonTreeNode>? {
 fun bodyToTableRows(body: String): List<NetworkHeader> {
     val trimmed = body.trim()
     if (trimmed.isEmpty()) return emptyList()
+    if (trimmed.length > MAX_JSON_STRUCTURE_CHARS) {
+        return listOf(NetworkHeader("body", trimmed.take(8_000)))
+    }
     return try {
         when (val element = compactJson.parseToJsonElement(trimmed)) {
-            is JsonObject -> element.entries.map { (key, value) ->
-                NetworkHeader(key, jsonElementText(value))
+            is JsonObject -> element.entries.take(400).map { (key, value) ->
+                NetworkHeader(key, jsonElementText(value).take(4_000))
             }
-            is JsonArray -> element.mapIndexed { index, value ->
-                NetworkHeader("[$index]", jsonElementText(value))
+            is JsonArray -> element.take(400).mapIndexed { index, value ->
+                NetworkHeader("[$index]", jsonElementText(value).take(4_000))
             }
-            else -> listOf(NetworkHeader("body", body))
+            else -> listOf(NetworkHeader("body", body.take(8_000)))
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
-        listOf(NetworkHeader("body", body))
+        listOf(NetworkHeader("body", body.take(8_000)))
     }
+}
+
+fun jsonToTableRows(raw: String): List<TableInputRow> {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty() || trimmed == "{}" || trimmed == "[]") {
+        return listOf(TableInputRow())
+    }
+    if (trimmed.length > MAX_JSON_STRUCTURE_CHARS) return listOf(TableInputRow())
+    return try {
+        when (val element = compactJson.parseToJsonElement(trimmed)) {
+            is JsonObject -> {
+                val rows = element.entries.flatMap { (key, value) ->
+                    when (value) {
+                        is JsonArray -> value.map { item ->
+                            TableInputRow(key = key, value = jsonElementText(item), enabled = true)
+                        }
+                        else -> listOf(TableInputRow(key = key, value = jsonElementText(value), enabled = true))
+                    }
+                }
+                rows.ifEmpty { listOf(TableInputRow()) }
+            }
+            else -> listOf(TableInputRow())
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        listOf(TableInputRow())
+    }
+}
+
+fun tableRowsToJson(rows: List<TableInputRow>): String {
+    val map = linkedMapOf<String, JsonElement>()
+    rows.filter { it.enabled && it.key.isNotBlank() }.forEach { row ->
+        val value = jsonPrimitiveFromText(row.value)
+        when (val existing = map[row.key]) {
+            null -> map[row.key] = value
+            is JsonArray -> map[row.key] = JsonArray(existing + value)
+            else -> map[row.key] = JsonArray(listOf(existing, value))
+        }
+    }
+    return if (map.isEmpty()) {
+        DEFAULT_JSON_OBJECT
+    } else {
+        prettyJson.encodeToString(JsonObject.serializer(), JsonObject(map))
+    }
+}
+
+fun editorDisplayText(raw: String): String {
+    if (raw.length <= MAX_EDITOR_CHARS) return raw
+    return raw.take(MAX_EDITOR_CHARS)
 }
 
 fun methodHasBody(method: HttpMethod): Boolean =
     method == HttpMethod.POST || method == HttpMethod.PUT || method == HttpMethod.PATCH
 
-private fun jsonElementToNode(key: String, value: JsonElement): JsonTreeNode = when (value) {
-    is JsonObject -> JsonTreeNode(
-        key = key,
-        preview = if (value.isEmpty()) "{}" else "{${value.size}}",
-        children = value.entries.map { (childKey, child) -> jsonElementToNode(childKey, child) }
-    )
-    is JsonArray -> JsonTreeNode(
-        key = key,
-        preview = if (value.isEmpty()) "[]" else "[${value.size}]",
-        children = value.mapIndexed { index, child -> jsonElementToNode("[$index]", child) }
-    )
-    JsonNull -> JsonTreeNode(key = key, preview = "null")
-    is JsonPrimitive -> JsonTreeNode(key = key, preview = jsonPrimitivePreview(value))
+private fun jsonElementToNode(
+    key: String,
+    value: JsonElement,
+    depth: Int,
+    counter: IntArray
+): JsonTreeNode {
+    if (counter[0] >= MAX_TREE_NODES || depth >= MAX_TREE_DEPTH) {
+        return JsonTreeNode(key = key, preview = "…")
+    }
+    counter[0]++
+    return when (value) {
+        is JsonObject -> JsonTreeNode(
+            key = key,
+            preview = if (value.isEmpty()) "{}" else "{${value.size}}",
+            children = if (depth + 1 >= MAX_TREE_DEPTH) {
+                emptyList()
+            } else {
+                value.entries.take(200).map { (childKey, child) ->
+                    jsonElementToNode(childKey, child, depth + 1, counter)
+                }
+            }
+        )
+        is JsonArray -> JsonTreeNode(
+            key = key,
+            preview = if (value.isEmpty()) "[]" else "[${value.size}]",
+            children = if (depth + 1 >= MAX_TREE_DEPTH) {
+                emptyList()
+            } else {
+                value.take(200).mapIndexed { index, child ->
+                    jsonElementToNode("[$index]", child, depth + 1, counter)
+                }
+            }
+        )
+        JsonNull -> JsonTreeNode(key = key, preview = "null")
+        is JsonPrimitive -> JsonTreeNode(key = key, preview = jsonPrimitivePreview(value))
+    }
 }
 
 private fun jsonPrimitivePreview(value: JsonPrimitive): String = when {
@@ -296,3 +405,21 @@ private fun jsonElementText(value: JsonElement): String = when (value) {
 
 private fun primitiveContent(element: JsonElement?): String? =
     (element as? JsonPrimitive)?.contentOrNull ?: (element as? JsonPrimitive)?.content
+
+private fun jsonPrimitiveFromText(raw: String): JsonElement {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return JsonPrimitive("")
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        runCatching { return compactJson.parseToJsonElement(trimmed) }
+    }
+    val asLong = trimmed.toLongOrNull()
+    val asDouble = trimmed.toDoubleOrNull()
+    return when {
+        trimmed.equals("null", ignoreCase = true) -> JsonNull
+        trimmed.equals("true", ignoreCase = true) -> JsonPrimitive(true)
+        trimmed.equals("false", ignoreCase = true) -> JsonPrimitive(false)
+        asLong != null && trimmed == asLong.toString() -> JsonPrimitive(asLong)
+        asDouble != null && !trimmed.startsWith("0") && trimmed.any { it == '.' } -> JsonPrimitive(asDouble)
+        else -> JsonPrimitive(raw)
+    }
+}

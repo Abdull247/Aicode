@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aicode.R
+import com.aicode.feature.network.domain.CurlParseResult
 import com.aicode.feature.network.domain.DEFAULT_AUTH_JSON
 import com.aicode.feature.network.domain.DEFAULT_JSON_OBJECT
 import com.aicode.feature.network.domain.HttpMethod
@@ -12,7 +13,9 @@ import com.aicode.feature.network.domain.NetworkClientSettings
 import com.aicode.feature.network.domain.NetworkHistoryEntry
 import com.aicode.feature.network.domain.NetworkHistoryStore
 import com.aicode.feature.network.domain.NetworkSendState
+import com.aicode.feature.network.domain.exportCurlCommand
 import com.aicode.feature.network.domain.normalizeRequestUrl
+import com.aicode.feature.network.domain.parseCurlCommand
 import com.aicode.feature.network.domain.parseTimeoutSeconds
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -121,6 +124,44 @@ class NetworkRequestViewModel @Inject constructor(
             val items = withContext(Dispatchers.IO) { historyStore.list() }
             _state.update { it.copy(history = items) }
         }
+    }
+
+    fun importCurl(raw: String): Boolean {
+        return when (val result = parseCurlCommand(raw)) {
+            is CurlParseResult.Success -> {
+                val parsed = result.parsed
+                _state.update {
+                    it.copy(
+                        url = parsed.url,
+                        method = parsed.method,
+                        queryJson = parsed.queryJson.ifBlank { DEFAULT_JSON_OBJECT },
+                        headersJson = parsed.headersJson.ifBlank { DEFAULT_JSON_OBJECT },
+                        bodyJson = parsed.bodyJson.ifBlank { DEFAULT_JSON_OBJECT },
+                        authJson = parsed.authJson.ifBlank { DEFAULT_AUTH_JSON },
+                        settings = it.settings.copy(
+                            followRedirects = parsed.followRedirects,
+                            sslVerify = parsed.sslVerify
+                        ),
+                        sendState = NetworkSendState.Idle
+                    )
+                }
+                true
+            }
+            is CurlParseResult.Failure -> false
+        }
+    }
+
+    fun exportCurl(): String {
+        val current = _state.value
+        return exportCurlCommand(
+            method = current.method,
+            url = current.url,
+            queryJson = current.queryJson,
+            headersJson = current.headersJson,
+            bodyJson = current.bodyJson,
+            authJson = current.authJson,
+            settings = current.settings
+        )
     }
 
     fun send() {

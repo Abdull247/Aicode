@@ -1739,9 +1739,16 @@
     <string name="network_request_response_empty">Send a request to see the response</string>
     <string name="network_request_view_mode">View</string>
     <string name="network_request_view_table">Table</string>
+    <string name="network_request_view_tabled_input">Tabled Input</string>
     <string name="network_request_view_json">JSON</string>
     <string name="network_request_view_tree">Tree</string>
     <string name="network_request_history">History</string>
+    <string name="network_request_import_curl">Import cURL</string>
+    <string name="network_request_export_curl">Export cURL</string>
+    <string name="network_request_curl_invalid">Could not parse that cURL command</string>
+    <string name="network_request_table_key">Key</string>
+    <string name="network_request_table_add_row">Add row</string>
+    <string name="network_request_table_remove_row">Remove row</string>
     <string name="network_request_history_empty">No request history yet</string>
     <string name="network_request_setting_redirects">Follow redirects</string>
     <string name="network_request_setting_redirects_desc">Follow HTTP 3xx responses automatically</string>

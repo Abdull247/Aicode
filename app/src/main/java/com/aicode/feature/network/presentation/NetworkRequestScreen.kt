@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -64,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -93,9 +95,12 @@ import com.aicode.feature.network.domain.RequestTab
 import com.aicode.feature.network.domain.ResponseTab
 import com.aicode.feature.network.domain.ResponseViewMode
 import com.aicode.feature.network.domain.bodyToTableRows
+import com.aicode.feature.network.domain.editorDisplayText
 import com.aicode.feature.network.domain.headersToJson
 import com.aicode.feature.network.domain.jsonToTreeNodes
 import com.aicode.feature.network.domain.prettyPrintJson
+import com.aicode.feature.network.domain.safeJsonViewMode
+import com.aicode.feature.network.domain.safeResponseViewMode
 import com.aicode.feature.settings.presentation.component.SettingsDivider
 import com.aicode.feature.settings.presentation.component.SettingsGroup
 import com.aicode.feature.settings.presentation.component.SettingsRow
@@ -106,10 +111,12 @@ import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.Clock
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Download
 import compose.icons.feathericons.FileText
 import compose.icons.feathericons.MoreHorizontal
 import compose.icons.feathericons.Send
 import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.Upload
 import compose.icons.feathericons.X
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -129,6 +136,8 @@ fun NetworkRequestScreen(
     val responseScroll = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showImportCurl by remember { mutableStateOf(false) }
+    var showExportCurl by remember { mutableStateOf(false) }
 
     val tabsScrolling by remember {
         derivedStateOf { requestScroll.isScrollInProgress || responseScroll.isScrollInProgress }
@@ -184,6 +193,34 @@ fun NetworkRequestScreen(
                                     menuExpanded = false
                                     viewModel.refreshHistory()
                                     showHistory = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.network_request_import_curl)) },
+                                leadingIcon = {
+                                    Icon(
+                                        FeatherIcons.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showImportCurl = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.network_request_export_curl)) },
+                                leadingIcon = {
+                                    Icon(
+                                        FeatherIcons.Upload,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showExportCurl = true
                                 }
                             )
                             DropdownMenuItem(
@@ -270,6 +307,43 @@ fun NetworkRequestScreen(
             onDismiss = { showHistory = false }
         )
     }
+
+    if (showImportCurl) {
+        CurlCommandSheet(
+            title = stringResource(R.string.network_request_import_curl),
+            actionLabel = stringResource(R.string.network_request_import_curl),
+            initialValue = "",
+            readOnly = false,
+            errorText = stringResource(R.string.network_request_curl_invalid),
+            onAction = { raw ->
+                val ok = viewModel.importCurl(raw)
+                if (ok) showImportCurl = false
+                ok
+            },
+            onDismiss = { showImportCurl = false }
+        )
+    }
+
+    if (showExportCurl) {
+        val clipboard = LocalClipboard.current
+        val scope = rememberCoroutineScope()
+        val exported = remember { viewModel.exportCurl() }
+        CurlCommandSheet(
+            title = stringResource(R.string.network_request_export_curl),
+            actionLabel = stringResource(R.string.network_request_export_curl),
+            initialValue = exported,
+            readOnly = true,
+            errorText = null,
+            onAction = { text ->
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("curl", text)))
+                }
+                showExportCurl = false
+                true
+            },
+            onDismiss = { showExportCurl = false }
+        )
+    }
 }
 
 @Composable
@@ -306,17 +380,18 @@ private fun RequestPane(
     var showModeSheet by remember { mutableStateOf(false) }
     val tab = RequestTab.entries[selectedTab.coerceIn(0, RequestTab.entries.lastIndex)]
     val viewMode = when (tab) {
-        RequestTab.QUERY -> JsonViewMode.valueOf(queryMode)
-        RequestTab.HEADERS -> JsonViewMode.valueOf(headersMode)
-        RequestTab.BODY -> JsonViewMode.valueOf(bodyMode)
-        RequestTab.AUTHORIZATION -> JsonViewMode.valueOf(authMode)
+        RequestTab.QUERY -> safeJsonViewMode(queryMode)
+        RequestTab.HEADERS -> safeJsonViewMode(headersMode)
+        RequestTab.BODY -> safeJsonViewMode(bodyMode)
+        RequestTab.AUTHORIZATION -> safeJsonViewMode(authMode)
         RequestTab.SETTINGS -> null
     }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .imePadding()
-            .padding(bottom = 88.dp)
+            .verticalScroll(scrollState)
+            .padding(bottom = 96.dp)
     ) {
         Column(
             modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -419,7 +494,6 @@ private fun RequestPane(
 
         Box(
             modifier = Modifier
-                .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = Spacing.lg)
         ) {
@@ -452,21 +526,15 @@ private fun RequestPane(
                     onJsonChange = onAuthChange,
                     emptyText = stringResource(R.string.network_request_auth_empty)
                 )
-                RequestTab.SETTINGS -> Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                ) {
-                    RequestSettings(
-                        followRedirects = followRedirects,
-                        sslVerify = sslVerify,
-                        timeoutSeconds = timeoutSeconds,
-                        enabled = !sending,
-                        onFollowRedirects = onFollowRedirects,
-                        onSslVerify = onSslVerify,
-                        onTimeoutChange = onTimeoutChange
-                    )
-                }
+                RequestTab.SETTINGS -> RequestSettings(
+                    followRedirects = followRedirects,
+                    sslVerify = sslVerify,
+                    timeoutSeconds = timeoutSeconds,
+                    enabled = !sending,
+                    onFollowRedirects = onFollowRedirects,
+                    onSslVerify = onSslVerify,
+                    onTimeoutChange = onTimeoutChange
+                )
             }
         }
     }
@@ -543,8 +611,9 @@ private fun JsonSection(
     emptyText: String
 ) {
     val shape = RoundedCornerShape(Radius.lg)
+    val editorMinHeight = (LocalConfiguration.current.screenHeightDp * 0.42f).dp.coerceAtLeast(280.dp)
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxWidth(),
         shape = shape,
         color = MaterialTheme.semanticColors.cardSurface,
         border = BorderStroke(0.5.dp, MaterialTheme.semanticColors.subtleBorder)
@@ -552,18 +621,32 @@ private fun JsonSection(
         when (mode) {
             JsonViewMode.JSON -> {
                 JsonCodeEditor(
-                    value = jsonText,
+                    value = editorDisplayText(jsonText),
                     onValueChange = if (editable) onJsonChange else null,
                     readOnly = !editable,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = editorMinHeight)
+                        .height(editorMinHeight)
                 )
             }
             JsonViewMode.TREE -> {
+                val nodes = remember(jsonText) {
+                    runCatching { jsonToTreeNodes(jsonText) }.getOrNull()
+                }
                 JsonTreeView(
-                    nodes = jsonToTreeNodes(jsonText),
+                    nodes = nodes,
                     emptyText = emptyText,
                     invalidText = stringResource(R.string.network_request_json_invalid),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            JsonViewMode.TABLE -> {
+                TableInputEditor(
+                    jsonText = jsonText,
+                    onJsonChange = onJsonChange,
+                    enabled = editable,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -657,16 +740,17 @@ private fun ResponsePane(
     var showModeSheet by remember { mutableStateOf(false) }
     val tab = ResponseTab.entries[selectedTab.coerceIn(0, ResponseTab.entries.lastIndex)]
     val viewMode = when (tab) {
-        ResponseTab.HEADERS -> ResponseViewMode.valueOf(headersMode)
-        ResponseTab.BODY -> ResponseViewMode.valueOf(bodyMode)
+        ResponseTab.HEADERS -> safeResponseViewMode(headersMode)
+        ResponseTab.BODY -> safeResponseViewMode(bodyMode)
         ResponseTab.METRICS -> null
     }
+    val fillBodyJson = tab == ResponseTab.BODY && viewMode == ResponseViewMode.JSON
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(bottom = 88.dp)
+            .then(if (fillBodyJson) Modifier else Modifier.verticalScroll(scrollState))
+            .padding(bottom = if (fillBodyJson) 0.dp else 88.dp)
     ) {
         ResponseTabBar(
             selected = selectedTab,
@@ -684,23 +768,42 @@ private fun ResponsePane(
             Spacer(Modifier.height(Spacing.sm))
         }
 
-        Box(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = Spacing.lg)
+                .then(if (fillBodyJson) Modifier.weight(1f, fill = true) else Modifier)
+        ) {
             when (tab) {
-                ResponseTab.HEADERS -> ResponseContentBox(
-                    mode = viewMode ?: ResponseViewMode.TABLE,
-                    tableRows = exchange.headers,
-                    jsonText = headersToJson(exchange.headers),
-                    emptyText = stringResource(R.string.network_request_headers_empty)
-                )
-                ResponseTab.BODY -> ResponseContentBox(
-                    mode = viewMode ?: ResponseViewMode.JSON,
-                    tableRows = bodyToTableRows(exchange.body),
-                    jsonText = prettyPrintJson(exchange.body),
-                    emptyText = stringResource(R.string.network_request_body_empty)
-                )
+                ResponseTab.HEADERS -> {
+                    val headersJson = remember(exchange.headers) {
+                        runCatching { headersToJson(exchange.headers) }.getOrDefault("{}")
+                    }
+                    ResponseContentBox(
+                        mode = viewMode ?: ResponseViewMode.TABLE,
+                        tableRows = exchange.headers,
+                        jsonText = headersJson,
+                        emptyText = stringResource(R.string.network_request_headers_empty)
+                    )
+                }
+                ResponseTab.BODY -> {
+                    val tableRows = remember(exchange.body) {
+                        runCatching { bodyToTableRows(exchange.body) }.getOrDefault(emptyList())
+                    }
+                    val bodyJson = remember(exchange.body) {
+                        runCatching { prettyPrintJson(exchange.body) }.getOrDefault(exchange.body)
+                    }
+                    ResponseContentBox(
+                        mode = viewMode ?: ResponseViewMode.JSON,
+                        tableRows = tableRows,
+                        jsonText = bodyJson,
+                        emptyText = stringResource(R.string.network_request_body_empty),
+                        expandJson = true
+                    )
+                }
                 ResponseTab.METRICS -> MetricsList(exchange.metrics)
             }
         }
+
     }
 
     if (showModeSheet && viewMode != null) {
@@ -916,6 +1019,7 @@ private fun jsonViewModeLabel(mode: JsonViewMode): String = stringResource(
     when (mode) {
         JsonViewMode.JSON -> R.string.network_request_view_json
         JsonViewMode.TREE -> R.string.network_request_view_tree
+        JsonViewMode.TABLE -> R.string.network_request_view_tabled_input
     }
 )
 
@@ -932,11 +1036,19 @@ private fun ResponseContentBox(
     mode: ResponseViewMode,
     tableRows: List<NetworkHeader>,
     jsonText: String,
-    emptyText: String
+    emptyText: String,
+    expandJson: Boolean = false
 ) {
     val shape = RoundedCornerShape(Radius.lg)
+    val jsonMinHeight = if (expandJson) {
+        (LocalConfiguration.current.screenHeightDp * 0.62f).dp.coerceAtLeast(360.dp)
+    } else {
+        280.dp
+    }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (expandJson && mode == ResponseViewMode.JSON) Modifier.fillMaxHeight() else Modifier),
         shape = shape,
         color = MaterialTheme.semanticColors.cardSurface,
         border = BorderStroke(0.5.dp, MaterialTheme.semanticColors.subtleBorder)
@@ -953,14 +1065,24 @@ private fun ResponseContentBox(
                 if (jsonText.isBlank()) {
                     EmptyBoxText(emptyText)
                 } else {
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (expandJson) Modifier.fillMaxHeight() else Modifier)
+                    ) {
                         JsonCodeEditor(
-                            value = jsonText,
+                            value = editorDisplayText(jsonText),
                             onValueChange = null,
                             readOnly = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(280.dp)
+                                .then(
+                                    if (expandJson) {
+                                        Modifier.fillMaxHeight()
+                                    } else {
+                                        Modifier.height(jsonMinHeight)
+                                    }
+                                )
                                 .padding(top = 36.dp)
                         )
                         CopyJsonButton(

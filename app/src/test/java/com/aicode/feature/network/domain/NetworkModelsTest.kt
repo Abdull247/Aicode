@@ -138,4 +138,44 @@ class NetworkModelsTest {
         assertTrue(isBlankJson("[]"))
         assertTrue(!isBlankJson("""{"q":"1"}"""))
     }
+
+    @Test
+    fun jsonToTableRows_readsObject() {
+        val rows = jsonToTableRows("""{"q":"hello","ok":true}""")
+        assertEquals(listOf("q", "ok"), rows.map { it.key })
+        assertEquals("hello", rows[0].value)
+        assertEquals("true", rows[1].value)
+        assertTrue(rows.all { it.enabled })
+    }
+
+    @Test
+    fun tableRowsRoundTrip_skipsDisabledAndBlankKeys() {
+        val json = tableRowsToJson(
+            listOf(
+                TableInputRow(key = "q", value = "hello", enabled = true),
+                TableInputRow(key = "page", value = "2", enabled = false),
+                TableInputRow(key = "", value = "x", enabled = true),
+                TableInputRow(key = "ok", value = "true", enabled = true)
+            )
+        )
+        val rows = jsonToTableRows(json)
+        assertEquals(listOf("q", "ok"), rows.map { it.key })
+        assertEquals("hello", rows.first { it.key == "q" }.value)
+        assertTrue(json.contains("\"ok\""))
+        assertTrue(!json.contains("page"))
+    }
+
+    @Test
+    fun safeViewModes_fallBackOnUnknown() {
+        assertEquals(JsonViewMode.JSON, safeJsonViewMode("nope"))
+        assertEquals(JsonViewMode.TABLE, safeJsonViewMode(JsonViewMode.TABLE.name))
+        assertEquals(ResponseViewMode.JSON, safeResponseViewMode(null))
+        assertEquals(ResponseViewMode.TABLE, safeResponseViewMode(ResponseViewMode.TABLE.name))
+    }
+
+    @Test
+    fun prettyPrintJson_skipsHugePayload() {
+        val huge = "x".repeat(MAX_JSON_PRETTY_CHARS + 8)
+        assertEquals(huge, prettyPrintJson(huge))
+    }
 }
