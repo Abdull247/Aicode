@@ -45,6 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -422,9 +423,10 @@ fun CodeEditorScreen(
             when (val s = state) {
                 is EditorUiState.Loading -> CenterBox(content) { CircularProgressIndicator() }
                 is EditorUiState.Success -> Box(modifier = content) {
-                    // Recreate the editor view per document (tab switch or reload); switching tabs
-                    // swaps content, so the view keyed by (path, content) is rebuilt intentionally.
-                    key(activePath to s.content) {
+                    // Recreate the editor view per document (tab switch or reload); switching
+                    // tabs swaps content, so the view keyed by the document identity is rebuilt
+                    // intentionally. Hash + length keep the per-frame key comparison O(1).
+                    key(activePath, s.contentHash, s.content.length) {
                         EditorSurface(
                             state = s,
                             modifier = Modifier.fillMaxSize(),
@@ -448,11 +450,11 @@ fun CodeEditorScreen(
                                 canUndo = undo
                                 canRedo = redo
                                 dirty = changed
-                                val editor = editorRef.value
-                                if (editor != null) {
-                                    viewModel.rememberDraft(activePath, editor.text.toString(), changed)
-                                }
-                            }
+                                // O(1) dirty flag only; stringify/copy happens once at tab switch
+                                // or dispose (snapshotActive), never per keystroke.
+                                viewModel.markDirty(activePath, changed)
+                            },
+                            onSnapshot = { snapshotActive() }
                         )
                     }
                     if (previewMode) {
@@ -631,7 +633,7 @@ private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: In
  *
  * [initialLine] is a chat deep-link target (center-jump, 1-based); [restoreLine]/[initialColumn] +
  * the scroll offsets are the tab snapshot restored exactly when no jump is pending. The factory
- * only runs once per document because the call site keys this composable by (path, content).
+ * only runs once per document because the call site keys this composable by the document identity.
  */
 @Composable
 private fun EditorSurface(
@@ -648,15 +650,17 @@ private fun EditorSurface(
     onBackgroundResolved: (Color) -> Unit,
     onCursorChanged: (line: Int, column: Int) -> Unit,
     onScrollChanged: (scrollX: Int, scrollY: Int) -> Unit,
-    onContentChanged: (canUndo: Boolean, canRedo: Boolean, dirty: Boolean) -> Unit
+    onContentChanged: (canUndo: Boolean, canRedo: Boolean, dirty: Boolean) -> Unit,
+    onSnapshot: () -> Unit
 ) {
     // Match the rendered app theme, not the system setting; the theme is switchable in-app.
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val themeSurface = MaterialTheme.colorScheme.surface
     // sora parses syntax on a background thread, so the first frame is never highlighted. A short
-    // fade-in turns the plain-text-then-sudden-colors flash into a smooth reveal.
-    var revealed by remember(state.content) { mutableStateOf(false) }
-    LaunchedEffect(state.content) { revealed = true }
+    // fade-in turns the plain-text-then-sudden-colors flash into a smooth reveal. Keys use the
+    // content hash: full-string equality per frame would stall large files.
+    var revealed by remember(state.contentHash) { mutableStateOf(false) }
+    LaunchedEffect(state.contentHash) { revealed = true }
     val contentAlpha by animateFloatAsState(
         targetValue = if (revealed) 1f else 0f,
         animationSpec = tween(durationMillis = HIGHLIGHT_REVEAL_MS),
@@ -750,7 +754,14 @@ private fun EditorSurface(
         }
     )
 
-    LaunchedEffect(state.content) { baselineText.value = state.content }
+    // Capture the document exactly when this surface leaves composition (tab switch, screen
+    // exit, activity recreation). Compose disposes later-registered effects first, so this runs
+    // while the editor is still alive and before AndroidView releases it.
+    DisposableEffect(Unit) {
+        onDispose { onSnapshot() }
+    }
+
+    LaunchedEffect(state.contentHash) { baselineText.value = state.content }
 
     // Re-apply colors on theme switch instead of recreating the editor, keeping unsaved content
     // and the undo stack intact.
@@ -784,10 +795,10 @@ private fun EditorSurface(
     // Font size and word wrap come from DataStore and usually arrive after the first frame;
     // setTextSize / setWordwrap rebuild the layout as well, hence they are effect keys too. After
     // the user scrolls by hand (scrolledByUser), no more automatic repositioning.
-    LaunchedEffect(state.content, initialLine) { scrolledByUser.value = false }
+    LaunchedEffect(state.contentHash, initialLine) { scrolledByUser.value = false }
     LaunchedEffect(
         editor,
-        state.content,
+        state.contentHash,
         initialLine,
         settings.wordWrap,
         settings.fontSizeSp

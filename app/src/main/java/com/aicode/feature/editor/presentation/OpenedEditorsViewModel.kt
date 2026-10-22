@@ -40,6 +40,18 @@ class OpenedEditorsViewModel @Inject constructor(
     private var loadedWorkspace: String? = null
     private var ready = CompletableDeferred<Unit>()
 
+    /** Latest cursor/scroll snapshot; conflated so scroll bursts collapse into one mutex pass. */
+    private data class PendingViewState(
+        val path: String,
+        val line: Int,
+        val column: Int,
+        val scrollX: Int,
+        val scrollY: Int
+    )
+
+    private val pendingViewState = MutableStateFlow<PendingViewState?>(null)
+    private var viewStateFlusher: Job? = null
+
     init {
         viewModelScope.launch {
             reload(workspaceRepository.currentPath())
@@ -55,6 +67,9 @@ class OpenedEditorsViewModel @Inject constructor(
         viewModelScope.launch {
             awaitReady()
             mutex.withLock {
+                // Fold in any pending view state so switching right after a scroll burst
+                // restores the newest position, not a pre-flush one.
+                applyPendingViewStateLocked()
                 val current = _state.value
                 val existing = current.tabs.firstOrNull { it.path == path }
                 val now = System.currentTimeMillis()
@@ -87,6 +102,7 @@ class OpenedEditorsViewModel @Inject constructor(
         viewModelScope.launch {
             awaitReady()
             mutex.withLock {
+                applyPendingViewStateLocked()
                 if (path == _state.value.activePath) return@withLock
                 if (_state.value.tabs.none { it.path == path }) return@withLock
                 commitLocked(_state.value.copy(activePath = path), persistNow = true)
@@ -101,6 +117,7 @@ class OpenedEditorsViewModel @Inject constructor(
         viewModelScope.launch {
             awaitReady()
             mutex.withLock {
+                applyPendingViewStateLocked()
                 val current = _state.value
                 val index = current.tabs.indexOfFirst { it.path == path }
                 if (index < 0) {
@@ -120,31 +137,50 @@ class OpenedEditorsViewModel @Inject constructor(
     }
 
     fun updateViewState(path: String, line: Int, column: Int, scrollX: Int, scrollY: Int) {
-        viewModelScope.launch {
-            awaitReady()
-            mutex.withLock {
-                val current = _state.value
-                val index = current.tabs.indexOfFirst { it.path == path }
-                if (index < 0) return@withLock
-                val tab = current.tabs[index]
-                if (tab.cursorLine == line &&
-                    tab.cursorColumn == column &&
-                    tab.scrollX == scrollX &&
-                    tab.scrollY == scrollY
-                ) return@withLock
-                val updated = current.tabs.toMutableList()
-                updated[index] = tab.copy(
-                    cursorLine = line.coerceAtLeast(1),
-                    cursorColumn = column.coerceAtLeast(1),
-                    scrollX = scrollX.coerceAtLeast(0),
-                    scrollY = scrollY.coerceAtLeast(0)
-                )
-                commitLocked(current.copy(tabs = updated), persistNow = false)
+        if (path.isBlank()) return
+        // Store-then-flush: the sink overwrites itself per event, and a single delayed flush
+        // applies the newest snapshot once per interval instead of once per scroll/selection
+        // event. Without this, fling scrolling floods the mutex and recomposes the whole
+        // editor screen on every frame.
+        pendingViewState.value = PendingViewState(path, line, column, scrollX, scrollY)
+        if (viewStateFlusher?.isActive != true) {
+            viewStateFlusher = viewModelScope.launch {
+                awaitReady()
+                delay(VIEW_STATE_FLUSH_MS)
+                mutex.withLock { applyPendingViewStateLocked() }
             }
         }
     }
 
     fun tabFor(path: String): OpenedEditorTab? = _state.value.tabs.firstOrNull { it.path == path }
+
+    /** Drain the conflated snapshot into the tab list; caller must hold [mutex]. */
+    private fun applyPendingViewStateLocked() {
+        while (true) {
+            val pending = pendingViewState.value ?: return
+            if (!pendingViewState.compareAndSet(pending, null)) continue
+            val current = _state.value
+            val index = current.tabs.indexOfFirst { it.path == pending.path }
+            if (index < 0) return
+            val tab = current.tabs[index]
+            if (tab.cursorLine == pending.line &&
+                tab.cursorColumn == pending.column &&
+                tab.scrollX == pending.scrollX &&
+                tab.scrollY == pending.scrollY
+            ) {
+                return
+            }
+            val updated = current.tabs.toMutableList()
+            updated[index] = tab.copy(
+                cursorLine = pending.line.coerceAtLeast(1),
+                cursorColumn = pending.column.coerceAtLeast(1),
+                scrollX = pending.scrollX.coerceAtLeast(0),
+                scrollY = pending.scrollY.coerceAtLeast(0)
+            )
+            commitLocked(current.copy(tabs = updated), persistNow = false)
+            return
+        }
+    }
 
     private fun commitLocked(state: OpenedEditorsState, persistNow: Boolean) {
         _state.value = state
@@ -177,3 +213,6 @@ fun OpenedEditorTab.title(dirty: Boolean): String {
 }
 
 private const val PERSIST_DEBOUNCE_MS = 400L
+
+/** Conflation window for cursor/scroll updates; one tab-list write per window at worst. */
+private const val VIEW_STATE_FLUSH_MS = 100L

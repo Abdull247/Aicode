@@ -25,7 +25,17 @@ import javax.inject.Inject
 /** Editor page state. */
 sealed interface EditorUiState {
     data object Loading : EditorUiState
-    data class Success(val content: String, val scopeName: String?) : EditorUiState
+
+    /**
+     * [contentHash] (computed once at load time) gives recomposition keys a cheap document
+     * identity: comparing a full [content] string for equality on every frame stalls large files.
+     */
+    data class Success(
+        val content: String,
+        val scopeName: String?,
+        val contentHash: Int = content.hashCode()
+    ) : EditorUiState
+
     data class TooLarge(val sizeBytes: Long) : EditorUiState
     data object Binary : EditorUiState
     data class Error(val detail: String?) : EditorUiState
@@ -119,6 +129,19 @@ class CodeEditorViewModel @Inject constructor(
     fun rememberDraft(path: String, content: String, dirty: Boolean) {
         val buf = buffers[path] ?: return
         buf.draft = if (dirty) content else null
+        _dirtyPaths.value = if (dirty) _dirtyPaths.value + path else _dirtyPaths.value - path
+    }
+
+    /**
+     * Track dirty state without copying text. Called on every content change while typing, so it
+     * must stay O(1); the full text is captured later by [rememberDraft] at switch/exit points.
+     */
+    fun markDirty(path: String, dirty: Boolean) {
+        if (path.isBlank()) return
+        val buffer = buffers[path]
+        // A stale draft would keep serving old content after leaving the document; when the file
+        // reports clean the live editor matches the baseline, so drop the draft.
+        if (!dirty) buffer?.draft = null
         _dirtyPaths.value = if (dirty) _dirtyPaths.value + path else _dirtyPaths.value - path
     }
 
