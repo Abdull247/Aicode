@@ -125,16 +125,21 @@ class CodeEditorViewModel @Inject constructor(
         }
     }
 
-    /** Keep the in-memory draft so switching tabs does not drop unsaved edits. */
-    fun rememberDraft(path: String, content: String, dirty: Boolean) {
+    /**
+     * Store the live editor text as this document's draft. Called at capture points (tab switch,
+     * screen exit, activity recreation) and derives dirty from the disk content, so the save flow
+     * never depends on the composable's local dirty flag.
+     */
+    fun captureDraft(path: String, content: String) {
         val buf = buffers[path] ?: return
+        val dirty = content != buf.diskContent
         buf.draft = if (dirty) content else null
         _dirtyPaths.value = if (dirty) _dirtyPaths.value + path else _dirtyPaths.value - path
     }
 
     /**
      * Track dirty state without copying text. Called on every content change while typing, so it
-     * must stay O(1); the full text is captured later by [rememberDraft] at switch/exit points.
+     * must stay O(1); the full text is captured later by [captureDraft] at switch/exit points.
      */
     fun markDirty(path: String, dirty: Boolean) {
         if (path.isBlank()) return

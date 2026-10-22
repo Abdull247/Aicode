@@ -137,6 +137,10 @@ fun CodeEditorScreen(
     val dirtyPaths by viewModel.dirtyPaths.collectAsStateWithLifecycle()
 
     val editorRef = remember { mutableStateOf<CodeEditor?>(null) }
+    // Document the editor in [editorRef] currently belongs to. Set by the surface factory,
+    // cleared on release; save/snapshot code must not assume it matches [activePath] — while a
+    // tab switch is settling, the view may still be the previous document's.
+    val boundPath = remember { mutableStateOf<String?>(null) }
     var canUndo by remember { mutableStateOf(false) }
     var canRedo by remember { mutableStateOf(false) }
     var dirty by remember { mutableStateOf(false) }
@@ -218,10 +222,14 @@ fun CodeEditorScreen(
 
     fun snapshotActive() {
         val editor = editorRef.value ?: return
+        // Route by the editor's own document, never by activePath: at dispose time after a tab
+        // switch the dying view may outlive the activePath change, and guessing the path would
+        // write one tab's text into the other's draft.
+        val path = boundPath.value ?: return
         val text = editor.text.toString()
-        viewModel.rememberDraft(activePath, text, dirty)
+        viewModel.captureDraft(path, text)
         tabsViewModel.updateViewState(
-            path = activePath,
+            path = path,
             line = editor.cursor.leftLine + 1,
             column = editor.cursor.leftColumn + 1,
             scrollX = editor.offsetX,
@@ -230,9 +238,20 @@ fun CodeEditorScreen(
     }
 
     fun requestSave() {
-        val editor = editorRef.value ?: return
-        pendingSaveText = editor.text.toString()
-        viewModel.save(pendingSaveText, activePath)
+        // Use the live view only when it truly belongs to the active document; otherwise fall
+        // back to the draft captured earlier (draft or disk content). Either way the saved text
+        // always comes from the active document's buffer, never from a stale editor.
+        val live = editorRef.value
+        val text = if (live != null && boundPath.value == activePath) {
+            live.text.toString()
+        } else {
+            viewModel.draftOf(activePath) ?: return
+        }
+        pendingSaveText = text
+        viewModel.save(text, activePath)
+        if (live != null && boundPath.value == activePath) {
+            viewModel.captureDraft(activePath, text)
+        }
     }
 
     fun handleBack() {
@@ -484,8 +503,10 @@ fun CodeEditorScreen(
                     key(activePath, s.contentHash, s.content.length) {
                         EditorSurface(
                             state = s,
+                            path = activePath,
                             modifier = Modifier.fillMaxSize(),
                             editorRef = editorRef,
+                            boundPath = boundPath,
                             settings = settings,
                             baselineText = baselineText,
                             initialLine = jumpLine,
@@ -560,8 +581,15 @@ fun CodeEditorScreen(
                             requestSave()
                         } else {
                             // Closing a dirty non-active tab: save its remembered draft, not the
-                            // active editor content.
-                            viewModel.save(viewModel.draftOf(closing).orEmpty(), closing)
+                            // active editor content. With no buffer left there is nothing to
+                            // save — close the tab, never write an empty file over it.
+                            val draft = viewModel.draftOf(closing)
+                            if (draft != null) {
+                                viewModel.save(draft, closing)
+                            } else {
+                                pendingClosePath = null
+                                finishCloseTab(closing, editorRef, viewModel, tabsViewModel, onBack)
+                            }
                         }
                     }) { Text(stringResource(R.string.editor_save_and_exit)) }
                 },
@@ -693,8 +721,10 @@ private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: In
 @Composable
 private fun EditorSurface(
     state: EditorUiState.Success,
+    path: String,
     modifier: Modifier,
     editorRef: MutableState<CodeEditor?>,
+    boundPath: MutableState<String?>,
     settings: EditorSettings,
     baselineText: MutableState<String>,
     initialLine: Int = 0,
@@ -801,11 +831,15 @@ private fun EditorSurface(
                     }
                 }
                 editorRef.value = this
+                boundPath.value = path
             }
         },
-        onRelease = {
-            editorRef.value = null
-            it.release()
+        onRelease = { released ->
+            // Only clear when it is still this surface's binding: a replacement editor may have
+            // been created already, and nuking its reference would break it.
+            if (editorRef.value === released) editorRef.value = null
+            if (boundPath.value == path) boundPath.value = null
+            released.release()
         }
     )
 
