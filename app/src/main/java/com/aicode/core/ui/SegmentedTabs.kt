@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aicode.core.theme.Radius
 import com.aicode.core.theme.semanticColors
 
 /**
@@ -48,13 +50,15 @@ fun SegmentedTabs(
     val trackColor = MaterialTheme.semanticColors.mutedSurface
     val thumbColor = if (dark) MaterialTheme.semanticColors.capsuleSurface else MaterialTheme.semanticColors.cardSurface
 
+    val trackShape = RoundedCornerShape(Radius.xl)
+    val thumbShape = RoundedCornerShape(Radius.mdLarge)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(34.dp)
+            .clip(trackShape)
             .background(trackColor)
-            .padding(3.dp)
+            .padding(2.dp)
     ) {
         val thumbWidth = maxWidth / labels.size
         // 选中滑块位移：临界阻尼弹簧（不过冲），切换时滑块顺滑到位，不是硬切。
@@ -68,11 +72,12 @@ fun SegmentedTabs(
                 .offset(x = thumbOffset)
                 .width(thumbWidth)
                 .fillMaxHeight(),
-            shape = RoundedCornerShape(9.dp),
+            shape = thumbShape,
             color = thumbColor,
             shadowElevation = 2.dp,
             content = {}
         )
+        val rippleColor = MaterialTheme.colorScheme.primary
         Row(modifier = Modifier.fillMaxSize()) {
             labels.forEachIndexed { index, label ->
                 val isSelected = selected == index
@@ -80,11 +85,10 @@ fun SegmentedTabs(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(9.dp))
-                        // 禁用点击波纹：选中滑块位移已是反馈，ripple 残留的深色阴影反而扎眼。
+                        .clip(thumbShape)
                         .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
+                            interactionSource = remember(index) { MutableInteractionSource() },
+                            indication = ripple(bounded = true, color = rippleColor)
                         ) { onSelect(index) },
                     contentAlignment = Alignment.Center
                 ) {

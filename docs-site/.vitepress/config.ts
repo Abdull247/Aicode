@@ -116,6 +116,7 @@ export default defineConfig({
             { text: '检查点与撤销', link: '/guide/checkpoint' },
             { text: '终端', link: '/guide/terminal' },
             { text: '内置浏览器', link: '/guide/browser' },
+            { text: '网络请求', link: '/guide/network-request' },
             { text: '文件浏览与代码编辑', link: '/guide/files' },
             { text: 'Git 版本管理', link: '/guide/git' },
             { text: '平板与大屏适配', link: '/guide/tablet' }

@@ -1711,6 +1711,40 @@
     <string name="browser_night_mode_off">Turn on night mode</string>
     <string name="browser_devtools">Developer tools</string>
 
+    <!-- Network request -->
+    <string name="network_request_title">Network Request</string>
+    <string name="network_request_more">More</string>
+    <string name="network_request_url_label">URL</string>
+    <string name="network_request_url_hint">https://example.com</string>
+    <string name="network_request_send">Send</string>
+    <string name="network_request_url_empty">Enter a URL</string>
+    <string name="network_request_tab_request">Request</string>
+    <string name="network_request_tab_response">Response</string>
+    <string name="network_request_tab_body">Body</string>
+    <string name="network_request_tab_metrics">Metrics</string>
+    <string name="network_request_headers_count">Headers (%1$d)</string>
+    <string name="network_request_headers_empty">No response headers</string>
+    <string name="network_request_body_empty">No response body</string>
+    <string name="network_request_response_empty">Send a request to see the response</string>
+    <string name="network_request_view_mode">View</string>
+    <string name="network_request_view_table">Table</string>
+    <string name="network_request_view_json">JSON</string>
+    <string name="network_request_table_name">Name</string>
+    <string name="network_request_table_value">Value</string>
+    <string name="network_request_metric_id">Request ID</string>
+    <string name="network_request_metric_method">Method</string>
+    <string name="network_request_metric_url">URL</string>
+    <string name="network_request_metric_status">Status</string>
+    <string name="network_request_metric_protocol">Protocol</string>
+    <string name="network_request_metric_remote">Remote address</string>
+    <string name="network_request_metric_duration">Duration</string>
+    <string name="network_request_metric_dns">DNS</string>
+    <string name="network_request_metric_connect">Connect</string>
+    <string name="network_request_metric_tls">TLS</string>
+    <string name="network_request_metric_request_size">Request size</string>
+    <string name="network_request_metric_response_size">Response size</string>
+    <string name="network_request_metric_content_type">Content type</string>
+
     <!-- Performance panel -->
     <string name="perf_panel_title">Performance Panel</string>
     <string name="perf_sampling_toggle">Enable performance sampling</string>

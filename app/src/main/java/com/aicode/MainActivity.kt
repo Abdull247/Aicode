@@ -642,6 +642,10 @@ fun AppNavigation(
                 openWorkbench(WorkbenchPaneKind.BROWSER)
                 if (!permanentDrawer) scope.launch { drawerState.close() }
             },
+            onNavigateToNetwork = {
+                navController.navigate("network")
+                if (!permanentDrawer) scope.launch { drawerState.close() }
+            },
             onNavigateToSettings = {
                 navController.navigate("settings")
                 if (!permanentDrawer) scope.launch { drawerState.snapTo(DrawerValue.Closed) }
@@ -788,6 +792,13 @@ fun AppNavigation(
                 val browserViewModel: com.aicode.feature.browser.presentation.BrowserViewModel = hiltViewModel()
                 BrowserScreen(
                     browserManager = browserViewModel.browserManager,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("network") {
+                val networkViewModel: com.aicode.feature.network.presentation.NetworkRequestViewModel = hiltViewModel()
+                com.aicode.feature.network.presentation.NetworkRequestScreen(
+                    viewModel = networkViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
