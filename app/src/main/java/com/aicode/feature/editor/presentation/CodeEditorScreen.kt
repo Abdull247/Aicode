@@ -5,16 +5,9 @@ import android.view.ViewGroup
 import android.util.TypedValue
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.rotateIn
-import androidx.compose.animation.rotateOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -348,8 +341,8 @@ fun CodeEditorScreen(
                             }
                         } else {
                             // Fullscreen route: opens the project files drawer. While the drawer
-                            // is open the icon morphs into an X (rotate + crossfade, Material
-                            // motion) and tapping it closes the drawer again.
+                            // is open the icon morphs into an X (quarter-turn rotation plus
+                            // crossfade, Material motion) and tapping it closes the drawer again.
                             IconButton(onClick = {
                                 scope.launch {
                                     if (drawerState.targetValue == DrawerValue.Open) {
@@ -359,34 +352,18 @@ fun CodeEditorScreen(
                                     }
                                 }
                             }) {
-                                AnimatedContent(
+                                val drawerOpen = drawerState.targetValue == DrawerValue.Open
+                                val rotation by animateFloatAsState(
+                                    targetValue = if (drawerOpen) DRAWER_ICON_ROTATE_ANGLE else 0f,
+                                    animationSpec = tween(DRAWER_ICON_MORPH_MS),
+                                    label = "drawer-icon-rotation"
+                                )
+                                Crossfade(
                                     // targetValue flips the moment open()/close() is called, so
                                     // the morph starts with the drawer motion, not after settling.
-                                    targetState = drawerState.targetValue == DrawerValue.Open,
-                                    transitionSpec = {
-                                        (
-                                            fadeIn(tween(DRAWER_ICON_FADE_MS)) +
-                                                scaleIn(
-                                                    initialScale = DRAWER_ICON_SCALE,
-                                                    animationSpec = tween(DRAWER_ICON_FADE_MS)
-                                                ) +
-                                                rotateIn(
-                                                    initialAngle = DRAWER_ICON_ROTATE_ANGLE,
-                                                    animationSpec = tween(DRAWER_ICON_MORPH_MS)
-                                                )
-                                            ).togetherWith(
-                                            fadeOut(tween(DRAWER_ICON_FADE_MS)) +
-                                                scaleOut(
-                                                    targetScale = DRAWER_ICON_SCALE,
-                                                    animationSpec = tween(DRAWER_ICON_FADE_MS)
-                                                ) +
-                                                rotateOut(
-                                                    targetAngle = -DRAWER_ICON_ROTATE_ANGLE,
-                                                    animationSpec = tween(DRAWER_ICON_MORPH_MS)
-                                                )
-                                        )
-                                    },
-                                    label = "drawer-menu-icon"
+                                    targetState = drawerOpen,
+                                    animationSpec = tween(DRAWER_ICON_FADE_MS),
+                                    label = "drawer-icon-swap"
                                 ) { open ->
                                     Icon(
                                         if (open) FeatherIcons.X else FeatherIcons.Menu,
@@ -396,7 +373,8 @@ fun CodeEditorScreen(
                                             } else {
                                                 R.string.editor_open_files_drawer
                                             }
-                                        )
+                                        ),
+                                        modifier = Modifier.graphicsLayer { rotationZ = rotation }
                                     )
                                 }
                             }
@@ -1117,12 +1095,11 @@ private const val UNDO_MERGE_WINDOW_MS = 500L
 private const val LINE_NUMBER_MARGIN_SP = 2f
 
 /**
- * Hamburger-to-X drawer button morph: the leaving icon shrinks and rotates one way while the
- * entering icon rotates in from the opposite side, reading as a single turning element.
+ * Hamburger-to-X drawer button morph: the icon turns a quarter rotation while the two glyphs
+ * crossfade, reading as a single element rotating from a hamburger into a close icon and back.
  */
 private const val DRAWER_ICON_MORPH_MS = 220
 private const val DRAWER_ICON_FADE_MS = 120
-private const val DRAWER_ICON_SCALE = 0.6f
 private const val DRAWER_ICON_ROTATE_ANGLE = 90f
 
 /** Slim file-name bar height and horizontal padding. */
