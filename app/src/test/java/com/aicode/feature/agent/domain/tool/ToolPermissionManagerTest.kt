@@ -20,7 +20,7 @@ class ToolPermissionManagerTest {
     private fun req(id: String, sessionId: String) = PendingToolPermission(
         id = id,
         toolName = "Bash",
-        title = "确认执行工具",
+        title = "Confirm tool",
         summary = "",
         details = "",
         argsPreview = "",

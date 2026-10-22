@@ -72,14 +72,14 @@ class ShizukuTool @Inject constructor(
         args: Map<String, JsonElement>,
         argsPreview: String
     ): PendingToolPermission {
-        val command = args["command"]?.jsonPrimitive?.contentOrNull ?: "未知命令"
+        val command = args["command"]?.jsonPrimitive?.contentOrNull ?: "unknown command"
         val timeoutSeconds = resolveTimeoutMs(args) / 1000L
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "确认执行 Shizuku 命令",
+            title = "Confirm Shizuku command",
             summary = command,
-            details = "将以 adb shell 身份在 Android 系统上执行。\n超时：${timeoutSeconds} 秒",
+            details = "Will run as adb shell on the Android system.\nTimeout: ${timeoutSeconds}s",
             argsPreview = argsPreview
         )
     }

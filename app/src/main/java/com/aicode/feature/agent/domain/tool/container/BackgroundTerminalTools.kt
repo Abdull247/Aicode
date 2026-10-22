@@ -158,50 +158,50 @@ class TerminalSessionTool @Inject constructor(
         argsPreview: String
     ): PendingToolPermission = when (actionOf(args)) {
         "start" -> {
-            val command = args["command"]?.asPlainString() ?: "未知命令"
+            val command = args["command"]?.asPlainString() ?: "unknown command"
             val title = args["title"]?.asPlainString()
             PendingToolPermission(
                 id = callId,
                 toolName = name,
-                title = "确认启动后台命令",
+                title = "Confirm background command",
                 summary = command,
-                details = "后台标签：${title?.takeIf { it.isNotBlank() } ?: "自动命名"}\n命令会持续运行，直到进程退出或手动停止。",
+                details = "Tab: ${title?.takeIf { it.isNotBlank() } ?: "auto-named"}\nRuns until the process exits or is stopped.",
                 argsPreview = argsPreview
             )
         }
         "send" -> {
-            val tabId = args["tab_id"]?.asPlainString() ?: "未知标签"
-            val input = args["input"]?.asPlainString() ?: "未知输入"
+            val tabId = args["tab_id"]?.asPlainString() ?: "unknown tab"
+            val input = args["input"]?.asPlainString() ?: "unknown input"
             val submit = args["submit"]?.asPlainString()?.toBooleanStrictOrNull() ?: true
             PendingToolPermission(
                 id = callId,
                 toolName = name,
-                title = "确认发送终端输入",
+                title = "Confirm terminal input",
                 summary = input,
-                details = "目标终端：$tabId\n自动回车执行：${if (submit) "是" else "否"}",
+                details = "Target tab: $tabId\nSubmit with Enter: ${if (submit) "yes" else "no"}",
                 argsPreview = argsPreview
             )
         }
         "key" -> {
-            val tabId = args["tab_id"]?.asPlainString() ?: "未知标签"
-            val key = args["key"]?.asPlainString() ?: "未知快捷键"
+            val tabId = args["tab_id"]?.asPlainString() ?: "unknown tab"
+            val key = args["key"]?.asPlainString() ?: "unknown key"
             PendingToolPermission(
                 id = callId,
                 toolName = name,
-                title = "确认发送终端快捷键",
+                title = "Confirm terminal key",
                 summary = key,
-                details = "目标终端：$tabId",
+                details = "Target tab: $tabId",
                 argsPreview = argsPreview
             )
         }
         "close" -> {
-            val tabId = args["tab_id"]?.asPlainString() ?: "未知标签"
+            val tabId = args["tab_id"]?.asPlainString() ?: "unknown tab"
             PendingToolPermission(
                 id = callId,
                 toolName = name,
-                title = "确认关闭终端标签",
+                title = "Confirm close terminal tab",
                 summary = tabId,
-                details = "将关闭终端 $tabId，并终止其中仍在运行的进程。",
+                details = "Will close tab $tabId and stop any process still running in it.",
                 argsPreview = argsPreview
             )
         }
@@ -210,9 +210,9 @@ class TerminalSessionTool @Inject constructor(
             PendingToolPermission(
                 id = callId,
                 toolName = name,
-                title = "确认读取终端输出",
-                summary = tabId?.takeIf { it.isNotBlank() } ?: "列出所有标签",
-                details = if (tabId.isNullOrBlank()) "列出当前所有终端标签及其状态" else "读取终端 $tabId 的当前输出",
+                title = "Confirm read terminal output",
+                summary = tabId?.takeIf { it.isNotBlank() } ?: "List all tabs",
+                details = if (tabId.isNullOrBlank()) "List all current terminal tabs and their status" else "Read current output of tab $tabId",
                 argsPreview = argsPreview
             )
         }

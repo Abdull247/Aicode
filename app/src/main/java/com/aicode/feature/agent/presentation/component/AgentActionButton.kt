@@ -56,7 +56,7 @@ internal fun AgentActionButton(
 
     Box(
         modifier = modifier
-            .height(44.dp)
+            .height(38.dp)
             .clip(shape)
             .background(container)
             .border(1.dp, border, shape)

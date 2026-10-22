@@ -30,7 +30,7 @@ class PlanModeTool @Inject constructor(
 ) : AbstractContextualTool() {
 
     override val name = "planMode"
-    override val description = "进入或退出 PLAN（计划）模式。action=\"enter\"：进入计划模式，转为只读探索、构思复杂改动方案，不要在 BUILD 模式直接写代码；action=\"exit\"：计划已经完成、提交给用户审阅时退出计划模式。退出后会自动恢复到进入 PLAN 之前的模式（从 BUILD 进入就回到 BUILD，从 ASK 进入就回到 ASK），无需你指定目标模式。退出会弹出计划审查面板，用户有两种选择：「批准并实施」→ 按计划执行；「继续反馈」→ 留在计划模式，用户会提出修改意见，你修订完善后再次调用 exit 重新提交，直到用户满意为止。进入与退出都需要用户授权；模式切换只能由用户在界面手动完成，本工具无法修改用户当前选择的模式。"
+    override val description = "Enter or leave PLAN mode. action=\"enter\": switch to read-only exploration and design a complex change; do not write code in BUILD. action=\"exit\": leave PLAN when the plan is ready for review. Exit restores the mode from before PLAN (BUILD→BUILD, ASK→ASK); you do not pick a target mode. Exit opens a plan-review panel: \"Approve and implement\" runs the plan; \"Continue feedback\" stays in PLAN so the user can comment, you revise, and exit again until they approve. Enter and exit both need user authorization. The user switches modes in the UI; this tool cannot change the mode they selected."
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.MODIFY_SESSION_STATE)
 
@@ -38,14 +38,14 @@ class PlanModeTool @Inject constructor(
         "action" to ToolParameter(
             name = "action",
             type = ParameterType.STRING,
-            description = "操作：'enter' 进入 PLAN 模式（只读规划），'exit' 退出 PLAN 模式（恢复到进入前的模式）",
+            description = "Action: 'enter' PLAN (read-only planning), 'exit' PLAN (restore the previous mode)",
             required = true,
             enum = listOf("enter", "exit")
         ),
         "reason" to ToolParameter(
             name = "reason",
             type = ParameterType.STRING,
-            description = "进入或退出 PLAN 模式的理由，将展示给用户",
+            description = "Reason for entering or leaving PLAN mode; shown to the user",
             required = true
         )
     )
@@ -55,29 +55,29 @@ class PlanModeTool @Inject constructor(
         context: AgentContext
     ): ToolResult {
         val action = args["action"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
-            ?: return ToolResult.Error("缺少必需参数：action", "MISSING_ACTION")
+            ?: return ToolResult.Error("Missing required parameter: action", "MISSING_ACTION")
 
         val reason = args["reason"]?.jsonPrimitive?.contentOrNull?.trim()
-            ?: return ToolResult.Error("缺少必需参数：reason", "MISSING_REASON")
+            ?: return ToolResult.Error("Missing required parameter: reason", "MISSING_REASON")
 
         val entering = when (action) {
             "enter" -> true
             "exit" -> false
-            else -> return ToolResult.Error("无效的 action：$action，只能是 'enter' 或 'exit'", "INVALID_ACTION")
+            else -> return ToolResult.Error("Invalid action: $action; must be 'enter' or 'exit'", "INVALID_ACTION")
         }
 
         if (entering && context.mode == AgentMode.PLAN) {
-            return ToolResult.Success(JsonPrimitive("当前已处于 PLAN 模式，无需进入。"))
+            return ToolResult.Success(JsonPrimitive("Already in PLAN mode."))
         }
         if (!entering && context.mode != AgentMode.PLAN) {
-            return ToolResult.Error("当前不在 PLAN 模式，无法退出", "NOT_IN_PLAN")
+            return ToolResult.Error("Not in PLAN mode; cannot exit", "NOT_IN_PLAN")
         }
 
         val sessionId = context.sessionId
-            ?: return ToolResult.Error("未关联会话 ID，无法切换模式", "NO_SESSION")
+            ?: return ToolResult.Error("No session ID; cannot switch mode", "NO_SESSION")
 
         val sessionEntity = chatSessionDao.getById(sessionId)
-            ?: return ToolResult.Error("找不到会话记录", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Session not found", "SESSION_NOT_FOUND")
 
         // 进入 PLAN 时记下当时的模式，退出时恢复到它：从 ASK/BUILD 进入 PLAN 的规划往返结束后
         // 应回到原模式，而不是一律落回 BUILD。该字段只在处于 PLAN 时被读取，每次进入 PLAN 都会覆写，因此无需在退出时清理。
@@ -98,7 +98,7 @@ class PlanModeTool @Inject constructor(
 
         return ToolResult.Success(
             JsonPrimitive(
-                if (entering) "已进入 PLAN 模式。" else "已退出 PLAN 模式，恢复为 ${effectiveMode.name} 模式。"
+                if (entering) "Entered PLAN mode." else "Exited PLAN mode, restored to ${effectiveMode.name} mode."
             )
         )
     }
@@ -109,15 +109,15 @@ class PlanModeTool @Inject constructor(
         argsPreview: String
     ): PendingToolPermission {
         val entering = args["action"]?.jsonPrimitive?.contentOrNull?.trim()?.equals("enter", ignoreCase = true) ?: true
-        val reason = args["reason"]?.jsonPrimitive?.contentOrNull ?: "无理由"
-        val label = if (entering) "进入 PLAN 模式" else "退出 PLAN 模式"
+        val reason = args["reason"]?.jsonPrimitive?.contentOrNull ?: "no reason"
+        val label = if (entering) "enter PLAN mode" else "exit PLAN mode"
 
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "计划模式申请",
-            summary = "AI 申请$label",
-            details = "操作：$label\n\n申请理由：$reason",
+            title = "Plan mode request",
+            summary = "AI requests to $label",
+            details = "Action: $label\n\nReason: $reason",
             argsPreview = argsPreview,
             rememberablePatterns = emptyList()
         )

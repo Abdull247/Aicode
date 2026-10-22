@@ -111,9 +111,9 @@ class McpTool(
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "确认调用 MCP 工具",
-            summary = "AI 请求调用 MCP 工具「$remoteName」（服务 $serverName）",
-            details = "MCP 工具：$remoteName\n服务：$serverName\n参数：$argsPreview",
+            title = "Confirm MCP tool",
+            summary = "AI requests MCP tool \"$remoteName\" (server $serverName)",
+            details = "MCP tool: $remoteName\nServer: $serverName\nArgs: $argsPreview",
             argsPreview = argsPreview
         )
     }

@@ -141,12 +141,12 @@ class GenerateImageTool @Inject constructor(
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "确认生成图片",
-            summary = "AI 请求调用生图模型生成图片",
+            title = "Confirm generate image",
+            summary = "AI requests generating an image",
             details = if (outputPath.isBlank()) {
-                "提示词：$prompt\n数量：$count\n保存到：$DEFAULT_OUTPUT_DIR/"
+                "Prompt: $prompt\nCount: $count\nSave to: $DEFAULT_OUTPUT_DIR/"
             } else {
-                "提示词：$prompt\n数量：$count\n保存到：$outputPath"
+                "Prompt: $prompt\nCount: $count\nSave to: $outputPath"
             },
             argsPreview = argsPreview
         )

@@ -53,7 +53,7 @@ object SkillRelevanceMatcher {
             .take(MAX_HINT_SKILLS)
             .joinToString("\n") { (skill, _) -> "- ${skill.name}: ${truncate(skill.description)}" }
 
-        return "[系统提醒] 以下技能可能与本轮任务相关：若某个适配，你必须先调用 loadSkill 加载其正文并在本轮遵循，再开始行动；均不适用的忽略本段。\n$lines"
+        return "[System reminder] These skills may relate to this turn: if one fits, you must loadSkill its body and follow it this turn before acting; if none apply, ignore this block.\n$lines"
     }
 
     /** 中文 bigram + 长度 ≥3 的英文数字词。 */
@@ -101,7 +101,7 @@ object SkillRelevanceMatcher {
     }
 
     private fun truncate(description: String): String {
-        val d = description.trim().ifEmpty { "（无描述）" }
+        val d = description.trim().ifEmpty { "(no description)" }
         return if (d.length <= HINT_DESC_CHARS) d else d.take(HINT_DESC_CHARS) + "…"
     }
 }

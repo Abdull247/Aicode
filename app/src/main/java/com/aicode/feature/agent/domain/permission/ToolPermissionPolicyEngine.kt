@@ -54,7 +54,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
         const val SHIZUKU_TOOL = "Shizuku"
 
         const val REASON_SHIZUKU =
-            "Shizuku 直接以 adb shell 身份操作宿主 Android 系统，权限高危，仅支持单次放行，不可记忆"
+            "Shizuku runs as adb shell on the host Android system. High-risk; single-use only, cannot be remembered"
 
         /**
          * 合并后的终端会话工具：其 `start` 动作承载 shell 命令，需走指令级前缀匹配；
@@ -92,21 +92,21 @@ class ToolPermissionPolicyEngine @Inject constructor(
         const val HOME_TOKEN = "\$HOME"
         const val HOME_BRACED = "\${HOME}"
 
-        const val REASON_RM_ROOT = "安全防护：禁止执行高危删除操作（根目录删除）"
-        const val REASON_RM_RELATIVE = "安全防护：禁止执行高危删除操作（全局或相对路径通配删除）"
-        const val REASON_RM_HOME = "安全防护：禁止执行高危删除操作（用户目录删除）"
-        const val REASON_RM_WORKSPACE = "安全防护：禁止执行高危删除操作（工作区根目录删除）"
-        const val REASON_RM_TMP = "安全防护：禁止执行高危删除操作（系统临时目录整体删除）"
-        const val REASON_RM_SYSTEM_DIR = "安全防护：禁止执行高危删除操作（系统关键目录删除）"
+        const val REASON_RM_ROOT = "Safety: high-risk delete blocked (root directory)"
+        const val REASON_RM_RELATIVE = "Safety: high-risk delete blocked (global or relative-path wildcard)"
+        const val REASON_RM_HOME = "Safety: high-risk delete blocked (home directory)"
+        const val REASON_RM_WORKSPACE = "Safety: high-risk delete blocked (workspace root)"
+        const val REASON_RM_TMP = "Safety: high-risk delete blocked (entire system temp directory)"
+        const val REASON_RM_SYSTEM_DIR = "Safety: high-risk delete blocked (critical system directory)"
 
         const val REASON_PLAN_DENY =
-            "当前处于 PLAN（计划）模式，系统物理沙盒已禁止修改系统状态或执行写操作。请在计划模式下仅调用只读工具探索代码，不要尝试修改文件或执行命令。"
+            "Currently in PLAN mode. The sandbox blocks writes and system changes. Use only read-only tools to explore; do not modify files or run commands."
 
         const val REASON_ASK_DENY =
-            "当前处于 ASK（提问）模式，系统物理沙盒已禁止修改系统状态或执行写操作。请在提问模式下仅做只读问答与探索；如需实施变更，请提示用户切换到「构建」或「计划」模式。"
+            "Currently in ASK mode. The sandbox blocks writes and system changes. Stay read-only; if changes are needed, ask the user to switch to Build or Plan mode."
 
         const val REASON_ASK_NO_PLAN_SWITCH =
-            "当前处于 ASK（提问）模式，AI 不得自行切换计划模式。如需规划，请由用户在界面手动切换到「计划」模式。"
+            "Currently in ASK mode. The AI must not switch to Plan mode on its own. If planning is needed, the user should switch to Plan mode in the UI."
 
         /** 相对/通配类删除目标（归一化后判定）：整体删除当前目录或任意内容。 */
         val RELATIVE_WILDCARD_TARGETS = setOf("*", ".*", ".", "..", "../*", "../.*")
@@ -292,14 +292,14 @@ class ToolPermissionPolicyEngine @Inject constructor(
             EvalResult(
                 verdict = Verdict.ASK,
                 rememberablePatterns = emptyList(),
-                askTitle = "高危操作提权确认",
-                rememberDisabledReason = "命令命中内置安全防护，提权仅支持单次放行，不可记忆"
+                askTitle = "Confirm elevated high-risk operation",
+                rememberDisabledReason = "Command hit built-in safety. Elevation is single-use only and cannot be remembered"
             )
         } else {
             EvalResult(
                 Verdict.DENY,
                 emptyList(),
-                denyReason = "$catastrophicReason。如确需执行，可在调用时加 `$ELEVATE_ARG: true` 重试，系统将向用户请求授权。"
+                denyReason = "$catastrophicReason. If you truly need this, retry with `$ELEVATE_ARG: true` so the system can ask the user to authorize."
             )
         }
 
@@ -326,7 +326,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
             return EvalResult(
                 Verdict.ASK,
                 rememberablePatterns = emptyList(),
-                rememberDisabledReason = "该工具会修改 Agent 配置、容器环境或调用外部动态工具，为降低误授权风险，仅支持单次放行"
+                rememberDisabledReason = "This tool changes Agent config, the container environment, or calls external dynamic tools. Single-use only to reduce accidental grants"
             )
         }
         // 完全权限：命令与非命令工具一律放行。
@@ -454,7 +454,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
                 HighRiskRuleMatcher.matchAny(highRiskRules, command)?.let { hit ->
                     return askWithRememberable(
                         analysis,
-                        askTitle = "命中高危规则：${hit.description.ifBlank { hit.pattern }}"
+                        askTitle = "High-risk rule: ${hit.description.ifBlank { hit.pattern }}"
                     )
                 }
                 if (!analysis.analyzable) {
@@ -467,7 +467,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
                     if (looksDestructiveLoose(command)) {
                         return askWithRememberable(
                             analysis,
-                            askTitle = "命令含复杂构造（命令替换/子shell）且检测到破坏性特征，需人工确认"
+                            askTitle = "Command uses complex construction (substitution/subshell) and looks destructive; needs confirmation"
                         )
                     }
                     return EvalResult(Verdict.ALLOW, emptyList())
@@ -494,9 +494,9 @@ class ToolPermissionPolicyEngine @Inject constructor(
             rmInfo.isRm && (rmInfo.targetPaths.isEmpty() || rmInfo.isRecursive || rmInfo.isWildcard)
         }
         val reason = if (hasRmUnrememberable) {
-            "高风险删除操作（递归/通配/强制批量删除），为确保数据安全不可记忆，仅可单次放行"
+            "High-risk delete (recursive/wildcard/forced bulk). Cannot be remembered; single-use only"
         } else {
-            "命令授权由「授权挡位 + 高危拦截规则」统一管理，仅支持单次放行"
+            "Command auth is managed by auth level + high-risk rules. Single-use only"
         }
         return EvalResult(
             verdict = Verdict.ASK,

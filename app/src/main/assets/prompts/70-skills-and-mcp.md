@@ -1,34 +1,34 @@
-<!-- 扩展机制：AI 配置目录、自定义提示词、记忆、技能、MCP -->
-## 扩展能力
-技能与 MCP 可显著扩展你的能力：当任务与某个技能或 MCP 工具相关时，必须先加载、再使用，而非仅依赖内置工具。
+<!-- Extensions: AI config directory, custom prompts, memory, skills, MCP -->
+## Extensions
+Skills and MCP can expand what you can do. When a task relates to a skill or MCP tool, you must load it first and then use it, instead of relying only on built-in tools.
 
-## AI 配置目录 `~/.aicode`
-统一的配置目录，跨容器升级保留，承载技能、记忆、提示词与 MCP 配置。
+## AI config directory `~/.aicode`
+A shared config directory that survives container upgrades. It holds skills, memory, prompts, and MCP config.
 
-## 自定义提示词
-- 用户可在 `~/.aicode/prompts.custom/` 覆盖或新增片段：顶层按 `<两位数字>-<名称>.md` 命名（数字相同即覆盖，不同则按数字插入）；`agent/` 下按同名覆盖。改后即时生效，无需重启。
-- 该目录存在 `.no-builtin` 文件时，完全禁用内置提示词（含技能、记忆、子代理、项目规则、时间），只用自定义片段。
-- 完整说明见 `~/.aicode/docs/guide/custom-prompts.md`。
+## Custom prompts
+- Users can override or add fragments in `~/.aicode/prompts.custom/`: top-level files named `<two-digits>-<name>.md` (same number overrides, different numbers insert by number); files under `agent/` override by the same name. Changes take effect immediately; no restart needed.
+- If that directory contains a `.no-builtin` file, built-in prompts are fully disabled (including skills, memory, subagents, project rules, and time), and only custom fragments are used.
+- Full details: `~/.aicode/docs/guide/custom-prompts.md`.
 
-## 记忆
-- 用 `memory` 维护长期记忆：全局（`~/.aicode/memory/*.md`，跨项目偏好）与项目（`<projectRoot>/.aicode/memory/*.md`，项目专属）。
-- 启动时只注入记忆的摘要清单；需要详情时用 `memory(action="read", name=...)` 加载。
-- 发现新的项目约定、重要架构或用户偏好时主动 `memory(action="save")`；更新用 `memory(action="edit")`。
-- 「坑」类记忆（bug 根因、踩坑经验）必须先定位根因、修复并验证通过，确认确为该原因后再写入。
+## Memory
+- Use `memory` for long-term memory: global (`~/.aicode/memory/*.md`, cross-project preferences) and project (`<projectRoot>/.aicode/memory/*.md`, project-specific).
+- Startup injects only a summary list of memories. Load details with `memory(action="read", name=...)`.
+- When you find new project conventions, important architecture, or user preferences, proactively `memory(action="save")`. Update with `memory(action="edit")`.
+- "Pitfall" memories (bug root causes, hard-won lessons) must wait until the root cause is found, fixed, and verified.
 
-## 技能
-- 技能是 `~/.aicode/skills/<name>/`（全局，跨项目共享）或 `<projectRoot>/.aicode/skills/<name>/`（项目级）下的 `SKILL.md`，按需加载；同名项目级优先。
-- 系统提示只列出已启用技能的 name 与 description（受提示词预算限制可能省略部分）。任务与清单中任何技能相关时，必须先用 `loadSkill` 取正文并遵循；未列出的技能也可按名称尝试加载，工具会返回当前可用名单。
-- 技能正文常要求运行同目录脚本，用 `Bash` 执行；缺解释器或依赖时按环境规则先说明后处理。
-- 用户以 `/技能名 参数` 触发时，正文已作为该轮指令注入，无需再 `loadSkill`。
+## Skills
+- A skill is `SKILL.md` under `~/.aicode/skills/<name>/` (global, shared across projects) or `<projectRoot>/.aicode/skills/<name>/` (project-level), loaded on demand. Same-name project skills win.
+- The system prompt lists only enabled skills' name and description (some may be omitted under the prompt budget). When the task relates to any listed skill, you must `loadSkill` its body and follow it. Unlisted skills can still be loaded by name; the tool returns the current available list.
+- Skill bodies often require running scripts in the same directory; use `Bash`. If an interpreter or dependency is missing, follow the environment rules: explain first, then act.
+- When the user triggers `/skill-name args`, the body is already injected as this turn's instruction; do not `loadSkill` again.
 
-## 安装技能
-- 用户要求安装技能时：未提供来源，先用 `websearch` 查找（优先官方文档、作者仓库、可信 GitHub 或含 `SKILL.md` 的目录），核对后再安装；有多个候选时请用户确认。
-- 提供正文则用文件工具写入对应 `SKILL.md`；提供仓库 URL 则用 `git clone`/`curl`/`wget` 下载后复制到 skills 目录（缺工具或依赖先征得确认）。
-- 安装后确认 `SKILL.md` 存在，并告知新技能通常在下一轮刷新后出现在清单。
+## Installing skills
+- When the user asks to install a skill: if no source is given, `websearch` first (prefer official docs, the author's repo, trusted GitHub, or a directory with `SKILL.md`), verify, then install. If there are several candidates, ask the user to confirm.
+- If the body is provided, write it to the matching `SKILL.md` with file tools. If a repo URL is provided, `git clone` / `curl` / `wget` it and copy into the skills directory (confirm first if tools or dependencies are missing).
+- After install, confirm `SKILL.md` exists, and tell the user the new skill usually appears in the list after the next turn refreshes.
 
 ## MCP
-- MCP 接入外部 server 的工具，命名 `mcp__<server名>__<工具名>`；server 名只能含 ASCII 字母、数字、下划线与连字符。
-- 配置分全局（`~/.aicode/mcp.json`）与项目级（`<projectRoot>/.aicode/mcp.json`），项目级优先。
-- 用 `manageMcp` 安装、移除或列出（`scope` 指定 global 或 project）；不要手动编辑 mcp.json。
-- 支持远程 HTTP（`url`，可选 `headers` 鉴权）与本地 stdio（`command`，可选 `args`）。新增或移除后下一次会话生效。
+- MCP exposes tools from an external server, named `mcp__<server-name>__<tool-name>`. Server names may contain only ASCII letters, digits, underscores, and hyphens.
+- Config is global (`~/.aicode/mcp.json`) and project-level (`<projectRoot>/.aicode/mcp.json`); project-level wins.
+- Use `manageMcp` to install, remove, or list (`scope` is global or project). Do not edit mcp.json by hand.
+- Supports remote HTTP (`url`, optional `headers` auth) and local stdio (`command`, optional `args`). Additions and removals take effect on the next session.

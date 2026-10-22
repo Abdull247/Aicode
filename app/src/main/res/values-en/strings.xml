@@ -607,7 +607,7 @@
     <string name="chat_perm_always_tool_desc">"Always allow" will remember all calls of this tool for this project</string>
     <string name="chat_perm_always_prefix">"Always allow" will remember for this project:</string>
     <string name="chat_perm_deny">Deny</string>
-    <string name="chat_perm_always_allow">Always Allow</string>
+    <string name="chat_perm_always_allow">Always</string>
     <string name="chat_perm_session_label">Session "%1$s"</string>
     <string name="chat_perm_review_note">AI reviewer flagged this as high-risk: %1$s</string>
     <string name="device_root_not_ready_hint">ROOT not available: make sure the device is rooted (Magisk/KernelSU) and this app has been granted superuser access, then re-check in "Execution Channel"</string>
@@ -1193,7 +1193,7 @@
     <string name="mcp_add_env_var">Add Environment Variable</string>
 
     <!-- Permissions Settings -->
-    <string name="perm_rules_short">Choosing "Always Allow" in chat creates remembered rules matched by command or path</string>
+    <string name="perm_rules_short">Choosing "Always" in chat creates remembered rules matched by command or path</string>
     <string name="perm_current_project">Current project: %1$s</string>
     <string name="perm_current_project_none">Current project (not selected)</string>
     <string name="perm_no_project_rules">No rules for this project</string>

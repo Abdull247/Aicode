@@ -102,14 +102,14 @@ class ExecuteCommandTool @Inject constructor(
         args: Map<String, JsonElement>,
         argsPreview: String
     ): PendingToolPermission {
-        val command = args["command"]?.jsonPrimitive?.contentOrNull ?: "未知命令"
+        val command = args["command"]?.jsonPrimitive?.contentOrNull ?: "unknown command"
         val timeoutSeconds = resolveTimeoutMs(args) / 1000L
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "确认执行命令",
+            title = "Confirm command",
             summary = command,
-            details = "将在当前执行环境中执行。\n超时：${timeoutSeconds} 秒",
+            details = "Will run in the current execution environment.\nTimeout: ${timeoutSeconds}s",
             argsPreview = argsPreview
         )
     }

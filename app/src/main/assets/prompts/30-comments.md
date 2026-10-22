@@ -1,5 +1,5 @@
-<!-- 注释：默认不写，仅在「为什么」不显而易见时写 -->
-## 注释
-- 默认不写注释；仅在「为什么这么写」不显而易见时加一条：隐藏的约束、微妙的不变量、针对某个 bug 的绕行、令人意外的行为。
-- 不解释代码「做了什么」；不在注释里引用当前任务、改动或调用方。
-- 不留被注释掉的旧代码。
+<!-- Comments: none by default; write only when the "why" is not obvious -->
+## Comments
+- Do not write comments by default. Add one only when the "why" is not obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, or surprising behavior.
+- Do not explain what the code does. Do not mention the current task, change, or caller in comments.
+- Do not leave commented-out old code.

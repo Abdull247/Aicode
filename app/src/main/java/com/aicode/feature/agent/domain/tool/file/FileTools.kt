@@ -147,15 +147,15 @@ class WriteFileTool @Inject constructor(
         args: Map<String, JsonElement>,
         argsPreview: String
     ): PendingToolPermission {
-        val path = args["path"]?.jsonPrimitive?.contentOrNull ?: "未知文件"
+        val path = args["path"]?.jsonPrimitive?.contentOrNull ?: "unknown file"
         val content = args["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val overwrite = args["overwrite"]?.jsonPrimitive?.booleanOrNull ?: true
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "确认写入文件",
-            summary = "AI 请求写入 $path",
-            details = "字符数：${content.length}\n行数：${content.lines().size}\n允许覆盖：${if (overwrite) "是" else "否"}",
+            title = "Confirm write file",
+            summary = "AI requests writing $path",
+            details = "Characters: ${content.length}\nLines: ${content.lines().size}\nOverwrite: ${if (overwrite) "yes" else "no"}",
             argsPreview = argsPreview
         )
     }

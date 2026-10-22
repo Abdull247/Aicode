@@ -45,10 +45,10 @@ data class CompactionResult(
  * 理解成「用户刚问我、我还没答完」，于是顺着摘要的语气续写，产出多语种混杂的乱码。
  * 加上明确的起止边界，让它被识别为一份已经完结的历史档案，而不是待续写的正文。
  */
-internal const val SUMMARY_HEADER = "【上下文接手摘要 · 历史档案】以下为更早对话的压缩记录，仅作背景参照。" +
-    "这是已完结的记录，不是你正在输出的文字，请勿延续其语气、请勿续写其中内容。\n\n"
+internal const val SUMMARY_HEADER = "[Context handoff summary · archive] Compressed record of earlier conversation, background only. " +
+    "This record is finished. Do not continue its tone or extend its content.\n\n"
 
-internal const val SUMMARY_FOOTER = "\n\n【摘要结束】以上为历史记录末尾。请直接回应用户的最新消息。"
+internal const val SUMMARY_FOOTER = "\n\n[End of summary] That is the end of the historical record. Respond to the user's latest message."
 
 /** 工具输出折叠的结果：[tokens] 是折叠后的估算，[underThreshold] 表示是否已压回阈值内。 */
 data class FoldOutcome(
@@ -398,11 +398,11 @@ class ContextCompactor @Inject constructor(
     }
 
     /** 折叠文本里记录的原始长度。多档折叠时必须沿用第一次的数字，否则越折越失真。 */
-    private val ORIGINAL_LENGTH = Regex("原始输出 (\\d+) 字符|共 (\\d+) 字符")
+    private val ORIGINAL_LENGTH = Regex("original output (\\d+) chars|total (\\d+) chars|原始输出 (\\d+) 字符|共 (\\d+) 字符")
 
     private fun originalLengthOf(body: String): Int {
         ORIGINAL_LENGTH.find(body)?.let { match ->
-            val captured = match.groupValues[1].ifEmpty { match.groupValues[2] }
+            val captured = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() }.orEmpty()
             captured.toIntOrNull()?.let { return it }
         }
         return body.length
@@ -441,14 +441,14 @@ class ContextCompactor @Inject constructor(
      */
     private fun foldToolOutput(toolName: String, body: String, keepChars: Int, original: Int): String {
         if (keepChars <= 0) {
-            return "[工具输出已折叠] $toolName：原始输出 $original 字符已移出上下文，需要完整内容请重新调用该工具。"
+            return "[tool output folded] $toolName: original output $original chars removed from context; call the tool again if you need the full content."
         }
         val head = keepChars * 2 / 3
         val tail = keepChars - head
         if (body.length <= head + tail) return body
         val omitted = (original - head - tail).coerceAtLeast(0)
         return buildString {
-            append("[$toolName 输出已折叠，共 $original 字符，此处省略 $omitted 字符]\n")
+            append("[$toolName output folded, total $original chars, omitted $omitted chars here]\n")
             append(body.take(head))
             append("\n…\n")
             append(body.takeLast(tail))

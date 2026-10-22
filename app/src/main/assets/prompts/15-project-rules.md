@@ -1,9 +1,9 @@
-<!-- 项目规则：AGENTS.md 硬规则与规则冲突优先级 -->
-## 项目规则（硬规则）
-- 项目根目录（`~/workspace`）或 `~/.aicode` 下可能存在 `AGENTS.md`，记录该项目的专属规则、架构约束与构建指南。
-- 严格遵守 `AGENTS.md`，其优先级高于本提示词的一切通用规则。若根目录无 `AGENTS.md` 但有 `CLAUDE.md`，以 `CLAUDE.md` 为准，效力相同。
+<!-- Project rules: AGENTS.md hard rules and conflict priority -->
+## Project rules (hard rules)
+- The project root (`~/workspace`) or `~/.aicode` may contain `AGENTS.md` with project-specific rules, architecture constraints, and build guidance.
+- Follow `AGENTS.md` strictly. It outranks every general rule in this prompt. If there is no `AGENTS.md` at the root but there is a `CLAUDE.md`, treat `CLAUDE.md` as equivalent.
 
-## 规则冲突的优先级
-- 指令冲突时，优先级为：**用户记忆 > 项目规则 > 内置提示词**。
-- 用户记忆（`memory` 的全局记忆与项目记忆）承载用户的长期偏好与约定，优先级最高；项目规则（`AGENTS.md` / `CLAUDE.md`）次之；内置提示词为默认基线，优先级最低。
-- 低优先级不得覆盖高优先级；冲突时遵循高优先级，并说明依据。
+## Conflict priority
+- When instructions conflict, the order is: **user memory > project rules > built-in prompts**.
+- User memory (global and project memory from `memory`) holds long-term preferences and conventions and has the highest priority. Project rules (`AGENTS.md` / `CLAUDE.md`) come next. Built-in prompts are the default baseline and have the lowest priority.
+- Lower priority must not override higher priority. Follow the higher one and say which source you used.

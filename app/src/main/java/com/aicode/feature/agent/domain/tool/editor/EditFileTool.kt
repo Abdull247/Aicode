@@ -91,14 +91,14 @@ class EditFileTool @Inject constructor(
         args: Map<String, JsonElement>,
         argsPreview: String
     ): PendingToolPermission {
-        val path = args["path"]?.jsonPrimitive?.contentOrNull ?: "未知文件"
+        val path = args["path"]?.jsonPrimitive?.contentOrNull ?: "unknown file"
         val editCount = (args["edits"] as? JsonArray)?.size ?: 1
         return PendingToolPermission(
             id = callId,
             toolName = name,
-            title = "确认修改文件",
-            summary = "AI 请求修改 $path",
-            details = "编辑数量：$editCount\n工具会先完整匹配，任一编辑失败则不会写入。",
+            title = "Confirm edit file",
+            summary = "AI requests editing $path",
+            details = "Edits: $editCount\nEach edit must match fully; if any fails, nothing is written.",
             argsPreview = argsPreview
         )
     }

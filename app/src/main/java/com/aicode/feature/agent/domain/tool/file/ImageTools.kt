@@ -66,32 +66,32 @@ class ViewImageTool @Inject constructor(
     private val geminiApi: GeminiApi
 ) : AbstractContextualTool() {
     override val name = "viewImage"
-    override val description = "查看本地图片并交给识图模型分析，返回分析结果与 vision_id。传 images 发起识图（可多张对比），传 id 继续同一识图会话追问。"
+    override val description = "View local images and send them to a vision model. Returns analysis and a vision_id. Pass images to start (compare multiple), or id to continue the same vision session."
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
     override val parameters = mapOf(
         "images" to ToolParameter(
             name = "images",
             type = ParameterType.ARRAY,
-            description = "图片路径列表，1~5 张；与 id 二选一，首次识图必传。路径为 ~/workspace/... 或容器绝对路径。",
+            description = "Image paths, 1–5; mutually exclusive with id; required for the first look. Use ~/workspace/... or an absolute container path.",
             required = false,
             itemsSchema = mapOf("type" to "string")
         ),
         "id" to ToolParameter(
             name = "id",
             type = ParameterType.STRING,
-            description = "识图会话 id，用于继续之前的识图会话追问；与 images 二选一。",
+            description = "Vision session id, to continue a previous vision session; mutually exclusive with images.",
             required = false
         ),
         "prompt" to ToolParameter(
             name = "prompt",
             type = ParameterType.STRING,
-            description = "可选提问或关注点；为空时默认描述图片内容。",
+            description = "Optional question or focus; if empty, the image content is described by default.",
             required = false
         ),
         "detail" to ToolParameter(
             name = "detail",
             type = ParameterType.STRING,
-            description = "清晰度：high（默认，大图压缩到最长边 1536）；original（原样直传，多张大图可能超限失败）；low（压缩到最长边 512 省 token）。",
+            description = "Detail: high (default, large images scaled to longest edge 1536); original (passthrough, several large images may fail); low (scale to longest edge 512 to save tokens).",
             required = false,
             enum = listOf("low", "high", "original")
         )
@@ -108,13 +108,13 @@ class ViewImageTool @Inject constructor(
             ?.takeIf { it in SUPPORTED_DETAILS } ?: "high"
 
         if (images.isNotEmpty() && id.isNotEmpty()) {
-            return ToolResult.Error("images 与 id 只能二选一：传 images 开启新的识图会话，传 id 继续已有会话。", "INVALID_ARGS")
+            return ToolResult.Error("Pass either images or id, not both: images starts a new vision session, id continues an existing one.", "INVALID_ARGS")
         }
         if (images.isEmpty() && id.isEmpty()) {
-            return ToolResult.Error("缺少参数：开启识图会话需传 images（1~5 张图片路径），继续追问需传 id 与 prompt。", "MISSING_ARGS")
+            return ToolResult.Error("Missing args: pass images (1–5 paths) to start a vision session, or id and prompt to continue.", "MISSING_ARGS")
         }
         if (images.size > MAX_IMAGES) {
-            return ToolResult.Error("一次最多传 $MAX_IMAGES 张图片，当前 ${images.size} 张。", "TOO_MANY_IMAGES")
+            return ToolResult.Error("At most $MAX_IMAGES images per call, got ${images.size}.", "TOO_MANY_IMAGES")
         }
         val supportsVision = isCurrentChatModelSupportsVision(context.sessionId)
         return if (supportsVision && images.isNotEmpty()) {
@@ -138,8 +138,8 @@ class ViewImageTool @Inject constructor(
                 is EncodeOutcome.Fail -> return ToolResult.Error(r.message, r.code)
             }
         }
-        val promptNotice = if (prompt.isNotBlank()) "（关注点/提问：$prompt）" else ""
-        val content = "已将 ${encoded.size} 张图片加载至当前对话上下文$promptNotice，可直接查看并分析。"
+        val promptNotice = if (prompt.isNotBlank()) " (focus/question: $prompt)" else ""
+        val content = "Loaded ${encoded.size} image(s) into the current conversation context$promptNotice. You can inspect and analyze them directly."
         return ToolResult.Success(
             data = JsonObject(
                 mapOf(
@@ -171,7 +171,7 @@ class ViewImageTool @Inject constructor(
             visionSessionStore.save(id, messages)
             val provider = resolveVisionProvider(sessionId)
             val response = callVisionProvider(provider, messages, sessionId)
-            val content = response.content.ifBlank { "（识图模型未返回内容）" }
+            val content = response.content.ifBlank { "(vision model returned no content)" }
             visionSessionStore.save(id, messages + AgentMessage.AssistantMessage(content = content))
             successResult(id, content)
         } catch (e: CancellationException) {
@@ -179,28 +179,28 @@ class ViewImageTool @Inject constructor(
         } catch (e: Exception) {
             visionSessionStore.delete(id)
             FileLogger.e(TAG, "识图失败", e)
-            ToolResult.Error(e.message ?: "识图调用失败", "VISION_CALL_FAILED")
+            ToolResult.Error(e.message ?: "Vision call failed", "VISION_CALL_FAILED")
         }
     }
 
     private suspend fun continueSession(id: String, prompt: String, sessionId: String?): ToolResult {
         if (prompt.isBlank()) {
-            return ToolResult.Error("继续识图会话需提供 prompt。", "MISSING_PROMPT")
+            return ToolResult.Error("Continuing a vision session requires prompt.", "MISSING_PROMPT")
         }
         val history = visionSessionStore.load(id)
-            ?: return ToolResult.Error("识图会话不存在或已过期：$id", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Vision session missing or expired: $id", "SESSION_NOT_FOUND")
         val messages = history + AgentMessage.UserMessage(content = prompt)
         return try {
             val provider = resolveVisionProvider(sessionId)
             val response = callVisionProvider(provider, messages, sessionId)
-            val content = response.content.ifBlank { "（识图模型未返回内容）" }
+            val content = response.content.ifBlank { "(vision model returned no content)" }
             visionSessionStore.save(id, messages + AgentMessage.AssistantMessage(content = content))
             successResult(id, content)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             FileLogger.e(TAG, "识图失败", e)
-            ToolResult.Error(e.message ?: "识图调用失败", "VISION_CALL_FAILED")
+            ToolResult.Error(e.message ?: "Vision call failed", "VISION_CALL_FAILED")
         }
     }
 
@@ -265,9 +265,9 @@ class ViewImageTool @Inject constructor(
     }
 
     private fun defaultPrompt(count: Int): String = if (count == 1) {
-        "请详细描述这张图片的内容，包括其中出现的文字、元素、布局、颜色等关键信息。"
+        "Describe this image in detail, including text, elements, layout, colors, and other key information."
     } else {
-        "请依次分析并对比这 $count 张图片：先分别描述每张图片的内容（包括文字、元素、布局、颜色等关键信息），再指出它们之间的相同点与差异。"
+        "Analyze and compare these $count images: first describe each (text, elements, layout, colors, and other key information), then list similarities and differences."
     }
 
     /**
@@ -350,16 +350,16 @@ class ViewImageTool @Inject constructor(
         return try {
             val file = fileAccess.copyToLocal(path)
             FileLogger.d(TAG, "viewImage path=$path -> ${file.absolutePath}, detail=$detail")
-            if (!fileAccess.exists(path)) return EncodeOutcome.Fail("文件不存在：$path", "FILE_NOT_FOUND")
-            if (!fileAccess.isFile(path)) return EncodeOutcome.Fail("路径不是文件：$path", "NOT_A_FILE")
+            if (!fileAccess.exists(path)) return EncodeOutcome.Fail("File not found: $path", "FILE_NOT_FOUND")
+            if (!fileAccess.isFile(path)) return EncodeOutcome.Fail("Path is not a file: $path", "NOT_A_FILE")
             val fileSize = fileAccess.fileSize(path)
-            if (fileSize <= 0L) return EncodeOutcome.Fail("图片文件为空：$path", "EMPTY_FILE")
+            if (fileSize <= 0L) return EncodeOutcome.Fail("Image file is empty: $path", "EMPTY_FILE")
 
             val bounds = decodeBounds(file)
-                ?: return EncodeOutcome.Fail("无法识别图片格式：$path", "UNSUPPORTED_IMAGE")
+                ?: return EncodeOutcome.Fail("Unrecognized image format: $path", "UNSUPPORTED_IMAGE")
             val sourceMime = guessMimeType(file)
             if (!sourceMime.startsWith("image/")) {
-                return EncodeOutcome.Fail("不是支持的图片文件：$path", "UNSUPPORTED_IMAGE")
+                return EncodeOutcome.Fail("Not a supported image file: $path", "UNSUPPORTED_IMAGE")
             }
 
             val originalOk = sourceMime in ORIGINAL_MIME_TYPES
@@ -380,7 +380,7 @@ class ViewImageTool @Inject constructor(
             )
         } catch (e: Exception) {
             FileLogger.e(TAG, "viewImage 编码异常: $path", e)
-            EncodeOutcome.Fail(e.message ?: "读取图片失败", "READ_IMAGE_ERROR")
+            EncodeOutcome.Fail(e.message ?: "Failed to read image", "READ_IMAGE_ERROR")
         }
     }
 

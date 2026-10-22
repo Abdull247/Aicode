@@ -922,7 +922,7 @@ internal fun ToolPermissionPanel(
                     val rememberLabel = when {
                         !canRemember -> request.rememberDisabledReason ?: stringResource(R.string.chat_perm_single_use_desc)
                         request.rememberablePatterns == listOf("*") -> stringResource(R.string.chat_perm_always_tool_desc)
-                        else -> stringResource(R.string.chat_perm_always_prefix) + request.rememberablePatterns.joinToString("、")
+                        else -> stringResource(R.string.chat_perm_always_prefix) + request.rememberablePatterns.joinToString(", ")
                     }
                     Spacer(Modifier.height(Spacing.xs))
                     Text(

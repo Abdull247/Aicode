@@ -29,7 +29,7 @@ object SkillListFormatter {
     private const val NOTICE_SLACK = 240
 
     /** 无描述时的占位，保持清单每行结构一致。 */
-    private const val NO_DESC = "（无描述）"
+    private const val NO_DESC = "(no description)"
 
     /**
      * 格式化技能清单；[skills] 为空返回 ""。
@@ -88,7 +88,7 @@ object SkillListFormatter {
 
     /** 省略告知：告诉模型少了多少、去哪看全量、以及未列出的也能按名称尝试加载。 */
     private fun omissionNotice(omitted: Int, charBudget: Int): String =
-        "…另有 $omitted 个技能因提示词预算（上限 $charBudget 字符）未在此列出；" +
-            "完整名单见 ~/.aicode/skills/ 与 <项目根目录>/.aicode/skills/ 目录，" +
-            "任务相关时可用 loadSkill 按名称尝试加载（工具会返回当前可用名单）。"
+        "…$omitted more skill(s) omitted due to prompt budget (max $charBudget chars); " +
+            "full list is in ~/.aicode/skills/ and <project-root>/.aicode/skills/; " +
+            "if relevant, try loadSkill by name (the tool returns the current available list)."
 }

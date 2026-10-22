@@ -1,4 +1,4 @@
-<!-- 标题生成：根据用户首条消息生成简洁会话标题，作为 systemPrompt 由 StatefulAgentWorkflow.generateTitle 加载。 -->
+<!-- Title generation: produce a concise thread title from the user's first message; loaded as systemPrompt by StatefulAgentWorkflow.generateTitle. -->
 You are a title generator. Output ONLY a thread title, nothing else.
 
 <task>
