@@ -70,8 +70,9 @@ class CodeEditorViewModel @Inject constructor(
         loadedPath = path
         val cached = buffers[path]
         if (cached != null) {
+            val tooLarge = cached.tooLargeBytes
             _uiState.value = when {
-                cached.tooLargeBytes != null -> EditorUiState.TooLarge(cached.tooLargeBytes)
+                tooLarge != null -> EditorUiState.TooLarge(tooLarge)
                 cached.binary -> EditorUiState.Binary
                 cached.error != null -> EditorUiState.Error(cached.error)
                 else -> EditorUiState.Success(
@@ -167,14 +168,17 @@ class CodeEditorViewModel @Inject constructor(
         }
     }
 
-    private fun FileBuffer.toUiState(): EditorUiState = when {
-        tooLargeBytes != null -> EditorUiState.TooLarge(tooLargeBytes)
-        binary -> EditorUiState.Binary
-        error != null || diskContent == null && draft == null -> EditorUiState.Error(error)
-        else -> EditorUiState.Success(
-            content = draft ?: diskContent.orEmpty(),
-            scopeName = scopeName
-        )
+    private fun FileBuffer.toUiState(): EditorUiState {
+        val tooLarge = tooLargeBytes
+        return when {
+            tooLarge != null -> EditorUiState.TooLarge(tooLarge)
+            binary -> EditorUiState.Binary
+            error != null || diskContent == null && draft == null -> EditorUiState.Error(error)
+            else -> EditorUiState.Success(
+                content = draft ?: diskContent.orEmpty(),
+                scopeName = scopeName
+            )
+        }
     }
 
     private data class FileBuffer(
