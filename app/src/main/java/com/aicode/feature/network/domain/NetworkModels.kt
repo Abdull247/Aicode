@@ -72,9 +72,12 @@ fun defaultViewMode(tab: ResponseTab): ResponseViewMode? = when (tab) {
 fun normalizeRequestUrl(raw: String): String {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return trimmed
-    val hasScheme = trimmed.startsWith("http://", ignoreCase = true) ||
-        trimmed.startsWith("https://", ignoreCase = true)
-    return if (hasScheme) trimmed else "https://$trimmed"
+    val lower = trimmed.lowercase()
+    return when {
+        lower.startsWith("http://") -> "http://" + trimmed.substring("http://".length)
+        lower.startsWith("https://") -> "https://" + trimmed.substring("https://".length)
+        else -> "https://$trimmed"
+    }
 }
 
 fun prettyPrintJson(raw: String): String {
