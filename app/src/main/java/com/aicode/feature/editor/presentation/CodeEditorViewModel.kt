@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 编辑器页状态。 */
+/** Editor page state. */
 sealed interface EditorUiState {
     data object Loading : EditorUiState
     data class Success(val content: String, val scopeName: String?) : EditorUiState
@@ -31,7 +31,7 @@ sealed interface EditorUiState {
     data class Error(val detail: String?) : EditorUiState
 }
 
-/** 保存结果，一次性事件，经 [CodeEditorViewModel.saveEvents] 下发。 */
+/** One-shot save result, delivered through [CodeEditorViewModel.saveEvents]. */
 sealed interface SaveResult {
     data object Success : SaveResult
     data class Error(val detail: String?) : SaveResult
@@ -50,67 +50,116 @@ class CodeEditorViewModel @Inject constructor(
     private val _saveEvents = Channel<SaveResult>(Channel.BUFFERED)
     val saveEvents = _saveEvents.receiveAsFlow()
 
-    /** 是否正在写盘（远程模式下经 SFTP，耗时较长，供 UI 转圈）。 */
+    /** True while writing to disk (SFTP in remote mode can take a while; UI shows a spinner). */
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
+
+    private val _dirtyPaths = MutableStateFlow<Set<String>>(emptySet())
+    val dirtyPaths: StateFlow<Set<String>> = _dirtyPaths.asStateFlow()
 
     val settings: StateFlow<EditorSettings> = editorSettings.settingsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EditorSettings())
 
     private var loadedPath: String? = null
+    private val buffers = LinkedHashMap<String, FileBuffer>()
 
-    /** 重复调用同一路径不会重复读盘，供 Compose 重组时安全调用。 */
+    /** Safe to call on recomposition: the same path is not re-read from disk. */
     fun load(path: String) {
-        if (loadedPath == path) return
+        if (path.isBlank()) return
+        if (loadedPath == path && _uiState.value !is EditorUiState.Loading) return
         loadedPath = path
+        val cached = buffers[path]
+        if (cached != null) {
+            _uiState.value = when {
+                cached.tooLargeBytes != null -> EditorUiState.TooLarge(cached.tooLargeBytes)
+                cached.binary -> EditorUiState.Binary
+                cached.error != null -> EditorUiState.Error(cached.error)
+                else -> EditorUiState.Success(
+                    content = cached.draft ?: cached.diskContent.orEmpty(),
+                    scopeName = cached.scopeName
+                )
+            }
+            return
+        }
         _uiState.value = EditorUiState.Loading
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = runCatching {
+            val result = runCatching {
                 if (!fileAccess.exists(path) || !fileAccess.isFile(path)) {
-                    return@runCatching EditorUiState.Error(null)
+                    return@runCatching FileBuffer(error = null)
                 }
                 val size = fileAccess.fileSize(path)
                 if (size > MAX_EDITABLE_BYTES) {
-                    return@runCatching EditorUiState.TooLarge(size)
+                    return@runCatching FileBuffer(tooLargeBytes = size)
                 }
                 val bytes = fileAccess.readBytes(path)
                 if (looksBinary(bytes)) {
-                    return@runCatching EditorUiState.Binary
+                    return@runCatching FileBuffer(binary = true)
                 }
-                // 语法包解析放在这里，确保 AndroidView factory 在主线程创建编辑器时 registry 已就绪。
                 TextMateSetup.ensureInitialized(context)
                 val scope = TextMateSetup.scopeNameFor(path)
                 if (scope != null) {
-                    // 预热 grammar：某种语法首次构造要编译大量正则，不在这里做就会压到主线程并拖后首次上色。
-                    // 不将对象传给 UI：Language 绑编辑器生命周期，editor.release() 会连带销毁它，
-                    // 跨重建复用已销毁实例会出问题——此处仅为把编译结果缓进 registry。
                     runCatching { TextMateLanguage.create(scope, false).destroy() }
                 }
-                EditorUiState.Success(
-                    content = bytes.toString(Charsets.UTF_8),
+                FileBuffer(
+                    diskContent = bytes.toString(Charsets.UTF_8),
                     scopeName = scope
                 )
             }.getOrElse { e ->
-                FileLogger.w(TAG, "打开文件失败: $path", e)
-                EditorUiState.Error(e.message)
+                FileLogger.w(TAG, "Failed to open file: $path", e)
+                FileBuffer(error = e.message)
             }
+            buffers[path] = result
+            if (loadedPath != path) return@launch
+            _uiState.value = result.toUiState()
         }
     }
 
-    /** 把编辑器当前内容写回文件。写入在 IO 线程进行，结果通过 [saveEvents] 通知，期间 [saving] 置位。 */
-    fun save(content: String) {
-        val path = loadedPath ?: return
+    /** Keep the in-memory draft so switching tabs does not drop unsaved edits. */
+    fun rememberDraft(path: String, content: String, dirty: Boolean) {
+        val buf = buffers[path] ?: return
+        buf.draft = if (dirty) content else null
+        _dirtyPaths.value = if (dirty) _dirtyPaths.value + path else _dirtyPaths.value - path
+    }
+
+    fun isDirty(path: String): Boolean = path in _dirtyPaths.value
+
+    /** Current editable text for [path]: the unsaved draft if any, else the disk content. */
+    fun draftOf(path: String): String? {
+        val buffer = buffers[path] ?: return null
+        return buffer.draft ?: buffer.diskContent
+    }
+
+    fun dropBuffer(path: String) {
+        buffers.remove(path)
+        _dirtyPaths.value = _dirtyPaths.value - path
+        if (loadedPath == path) {
+            loadedPath = null
+            _uiState.value = EditorUiState.Loading
+        }
+    }
+
+    /** Write the editor contents back to disk. Runs on IO; result via [saveEvents]; [saving] while in flight. */
+    fun save(content: String, path: String? = loadedPath) {
+        val target = path ?: return
         viewModelScope.launch(Dispatchers.IO) {
             _saving.value = true
             try {
-                val result = runCatching { fileAccess.writeFile(path, content) }
+                val result = runCatching { fileAccess.writeFile(target, content) }
                     .fold(
                         onSuccess = { SaveResult.Success },
                         onFailure = { e ->
-                            FileLogger.w(TAG, "保存文件失败: $path", e)
+                            FileLogger.w(TAG, "Failed to save file: $target", e)
                             SaveResult.Error(e.message)
                         }
                     )
+                if (result is SaveResult.Success) {
+                    val buf = buffers[target]
+                    if (buf != null) {
+                        buf.diskContent = content
+                        buf.draft = null
+                    }
+                    _dirtyPaths.value = _dirtyPaths.value - target
+                }
                 _saveEvents.send(result)
             } finally {
                 _saving.value = false
@@ -118,16 +167,31 @@ class CodeEditorViewModel @Inject constructor(
         }
     }
 
+    private fun FileBuffer.toUiState(): EditorUiState = when {
+        tooLargeBytes != null -> EditorUiState.TooLarge(tooLargeBytes)
+        binary -> EditorUiState.Binary
+        error != null || diskContent == null && draft == null -> EditorUiState.Error(error)
+        else -> EditorUiState.Success(
+            content = draft ?: diskContent.orEmpty(),
+            scopeName = scopeName
+        )
+    }
+
+    private data class FileBuffer(
+        var diskContent: String? = null,
+        var draft: String? = null,
+        var scopeName: String? = null,
+        var tooLargeBytes: Long? = null,
+        var binary: Boolean = false,
+        var error: String? = null
+    )
+
     private companion object {
         const val TAG = "CodeEditorViewModel"
 
-        /** 全量读入内存，超过该体积拒绝打开以避免 OOM 与长时间卡顿。 */
         const val MAX_EDITABLE_BYTES = 2L * 1024 * 1024
-
-        /** 二进制嗅探的采样字节数：与 git 一致，仅看开头一段。 */
         const val BINARY_SNIFF_BYTES = 8000
 
-        /** 二进制判定：开头采样段内出现 NUL 字节即视为二进制（文本文件不含 NUL，误判率极低）。 */
         fun looksBinary(bytes: ByteArray): Boolean {
             val limit = minOf(bytes.size, BINARY_SNIFF_BYTES)
             for (i in 0 until limit) {

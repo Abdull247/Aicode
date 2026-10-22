@@ -18,17 +18,19 @@ import com.aicode.feature.git.presentation.component.GitScreen
 import com.aicode.feature.terminal.presentation.TerminalViewModel
 import com.aicode.feature.terminal.presentation.component.TerminalScreen
 
-/** 大屏右栏（工作台）当前承载的内容。 */
+/** Content currently hosted in the wide-screen right workbench pane. */
 internal enum class WorkbenchPaneKind { NONE, EDITOR, TERMINAL, GIT, BROWSER }
 
 /**
- * 大屏下与聊天并排的右栏内容。
+ * Right-pane content shown next to the chat panel on wide screens.
  *
- * 三个页面本身就是「参数 + 回调」的独立组件，这里只是把它们的返回动作接成「关闭右栏」；
- * 窄窗下这些页面仍走 NavHost 全屏路由，两条路径共用同一份 UI 代码。
+ * The wrapped pages are standalone "arguments + callbacks" components; this only wires their back
+ * action to "close the pane". On narrow screens the same pages still render through fullscreen
+ * NavHost routes, so both paths share one UI implementation.
  *
- * ViewModel 挂在聊天页的 NavBackStackEntry 上，右栏在几种内容间切换不会销毁它们——
- * 终端会话本身归单例 TerminalSessionManager 所有，与这里的作用域无关。
+ * ViewModels are scoped to the chat page's NavBackStackEntry, so switching between pane contents
+ * does not destroy them; terminal sessions themselves are owned by the singleton
+ * TerminalSessionManager, independent of this scope.
  */
 @Composable
 internal fun WorkbenchPaneContent(
@@ -48,6 +50,8 @@ internal fun WorkbenchPaneContent(
                 initialLine = editorLine,
                 onBack = onClose,
                 embedded = true
+                // No fileTreeHost: the pane editor keeps the X close, and the file tree lives
+                // in the permanent chat sidebar next to it.
             )
 
             WorkbenchPaneKind.TERMINAL -> {
@@ -60,7 +64,9 @@ internal fun WorkbenchPaneContent(
             }
 
             WorkbenchPaneKind.GIT -> {
-                // 凭据页留在右栏内部翻一层，而不是跳全屏路由，否则大屏下会从双栏突然变成整屏。
+                // The credentials page stays as an inner layer of the pane instead of jumping to
+                // a fullscreen route, which would suddenly turn the two-column layout into a
+                // full-screen takeover.
                 var showCredentials by rememberSaveable { mutableStateOf(false) }
                 if (showCredentials) {
                     val credentialViewModel: CredentialViewModel = hiltViewModel()

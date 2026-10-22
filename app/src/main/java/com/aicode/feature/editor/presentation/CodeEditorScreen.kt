@@ -14,16 +14,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DismissibleDrawerSheet
+import androidx.compose.material3.DismissibleNavigationDrawer
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -42,8 +48,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -65,15 +74,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aicode.R
 import com.aicode.core.theme.Spacing
+import com.aicode.core.ui.drawerWidth
 import com.aicode.feature.editor.data.EditorSettings
 import com.aicode.feature.editor.domain.TextMateSetup
+import com.aicode.feature.editor.presentation.component.EditorFilesDrawer
+import com.aicode.feature.editor.presentation.component.EditorTabBar
 import com.aicode.feature.editor.presentation.component.MarkdownPreviewWebView
+import com.aicode.feature.settings.presentation.component.settingsPageBackground
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Code
 import compose.icons.feathericons.Eye
+import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Save
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.X
@@ -87,10 +100,12 @@ import io.github.rosemoe.sora.text.UndoManager
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 /**
- * 独立全屏代码编辑页。支持语法高亮、撤销/重做、底部符号快捷栏与保存。
- * 保存直接覆盖写回，不做外部并发写检测——AI 工具或终端可能同时改同一文件。
+ * Full-screen code editor with syntax highlight, undo/redo, a symbol bar, save,
+ * a standard navigation drawer for the project file tree, and multi-file tabs.
+ * Save overwrites in place; there is no external concurrent-write check.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,40 +114,61 @@ fun CodeEditorScreen(
     onBack: () -> Unit,
     initialLine: Int = 0,
     embedded: Boolean = false,
-    viewModel: CodeEditorViewModel = hiltViewModel()
+    fileTreeHost: EditorFileTreeHost? = null,
+    viewModel: CodeEditorViewModel = hiltViewModel(),
+    tabsViewModel: OpenedEditorsViewModel = hiltViewModel()
 ) {
-    LaunchedEffect(path) { viewModel.load(path) }
+    val tabsState by tabsViewModel.state.collectAsStateWithLifecycle()
+    val activePath = tabsState.activePath?.takeIf { it.isNotBlank() } ?: path
+    LaunchedEffect(path, initialLine) {
+        if (path.isNotBlank()) tabsViewModel.ensureOpen(path, initialLine)
+    }
+    LaunchedEffect(activePath) { viewModel.load(activePath) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val dirtyPaths by viewModel.dirtyPaths.collectAsStateWithLifecycle()
 
     val editorRef = remember { mutableStateOf<CodeEditor?>(null) }
     var canUndo by remember { mutableStateOf(false) }
     var canRedo by remember { mutableStateOf(false) }
     var dirty by remember { mutableStateOf(false) }
-    // 已保存（或刚加载）的内容。脏标记按与它的差异判定，撤销回原样时才能自行复位。
     val baselineText = remember { mutableStateOf("") }
     var pendingSaveText by remember { mutableStateOf("") }
     var pendingExit by remember { mutableStateOf(false) }
+    var pendingClosePath by remember { mutableStateOf<String?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var previewMode by remember { mutableStateOf(false) }
     var cursorLine by remember { mutableStateOf(1) }
     var cursorColumn by remember { mutableStateOf(1) }
-    val isMarkdown = remember(path) {
-        path.substringAfterLast('.', "").lowercase() in setOf("md", "markdown")
+    val isMarkdown = remember(activePath) {
+        activePath.substringAfterLast('.', "").lowercase() in setOf("md", "markdown")
     }
     var editorBackground by remember { mutableStateOf<Color?>(null) }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val restoredTab = tabsState.tabs.firstOrNull { it.path == activePath }
+    // Chat deep-link jump target. Latched per (path, line) so switching tabs never replays it.
+    var jumpLine by remember { mutableIntStateOf(0) }
+    var lastJumpArgs by remember { mutableStateOf<Pair<String, Int>?>(null) }
 
-    // 切换文件时重置编辑态，避免旧文件的撤销/脏标记残留到新文件。
-    LaunchedEffect(path) {
+    LaunchedEffect(activePath) {
         canUndo = false
         canRedo = false
-        dirty = false
+        dirty = activePath in dirtyPaths
         pendingExit = false
-        cursorLine = 1
-        cursorColumn = 1
+        jumpLine = 0
+        cursorLine = (restoredTab?.cursorLine ?: 1).coerceAtLeast(1)
+        cursorColumn = (restoredTab?.cursorColumn ?: 1).coerceAtLeast(1)
         previewMode = false
+    }
+
+    LaunchedEffect(path, initialLine, activePath) {
+        if (initialLine > 0 && activePath == path && lastJumpArgs != path to initialLine) {
+            lastJumpArgs = path to initialLine
+            jumpLine = initialLine
+        }
     }
 
     val context = LocalContext.current
@@ -142,16 +178,25 @@ fun CodeEditorScreen(
         viewModel.saveEvents.collect { result ->
             when (result) {
                 is SaveResult.Success -> {
-                    baselineText.value = pendingSaveText
-                    dirty = false
+                    val closing = pendingClosePath
+                    // Saving a non-active tab's draft must not touch the active document baseline.
+                    if (pendingExit || closing == null || closing == activePath) {
+                        baselineText.value = pendingSaveText
+                        dirty = false
+                    }
                     Toast.makeText(context, savedText, Toast.LENGTH_SHORT).show()
                     if (pendingExit) {
                         pendingExit = false
+                        pendingClosePath = null
                         onBack()
+                    } else if (closing != null) {
+                        pendingClosePath = null
+                        finishCloseTab(closing, editorRef, viewModel, tabsViewModel, onBack)
                     }
                 }
                 is SaveResult.Error -> {
                     pendingExit = false
+                    pendingClosePath = null
                     Toast.makeText(
                         context,
                         result.detail ?: saveFailedText,
@@ -162,202 +207,381 @@ fun CodeEditorScreen(
         }
     }
 
-    fun requestSave() {
+    fun snapshotActive() {
         val editor = editorRef.value ?: return
-        pendingSaveText = editor.text.toString()
-        viewModel.save(pendingSaveText)
-    }
-
-    fun handleBack() {
-        if (dirty) showUnsavedDialog = true else onBack()
-    }
-
-    BackHandler(enabled = !showSettings && !previewMode) { handleBack() }
-    BackHandler(enabled = showSettings) { showSettings = false }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {},
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground
-                    ),
-                    navigationIcon = {
-                        IconButton(onClick = { handleBack() }) {
-                            Icon(
-                                if (embedded) FeatherIcons.X else FeatherIcons.ArrowLeft,
-                                contentDescription = stringResource(
-                                    if (embedded) R.string.common_close else R.string.common_back
-                                )
-                            )
-                        }
-                    },
-                    actions = {
-                        val editable = state is EditorUiState.Success
-                        if (isMarkdown && editable) {
-                            IconButton(onClick = { previewMode = !previewMode }) {
-                                Icon(
-                                    if (previewMode) FeatherIcons.Code else FeatherIcons.Eye,
-                                    contentDescription = stringResource(
-                                        if (previewMode) R.string.editor_md_show_source
-                                        else R.string.editor_md_preview
-                                    )
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = { editorRef.value?.undo() },
-                            enabled = editable && canUndo
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Undo,
-                                contentDescription = stringResource(R.string.editor_undo)
-                            )
-                        }
-                        IconButton(
-                            onClick = { editorRef.value?.redo() },
-                            enabled = editable && canRedo
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Redo,
-                                contentDescription = stringResource(R.string.editor_redo)
-                            )
-                        }
-                        IconButton(
-                            onClick = { requestSave() },
-                            enabled = editable && dirty && !saving
-                        ) {
-                            if (saving) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(
-                                    FeatherIcons.Save,
-                                    contentDescription = stringResource(R.string.common_save)
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = { showSettings = true },
-                            enabled = editable
-                        ) {
-                            Icon(
-                                FeatherIcons.Settings,
-                                contentDescription = stringResource(R.string.editor_settings)
-                            )
-                        }
-                    }
-                )
-                HorizontalDivider(thickness = 0.5.dp)
-                FileTitleBar(
-                    fileName = path.substringAfterLast('/'),
-                    dirty = dirty,
-                    line = cursorLine,
-                    column = cursorColumn
-                )
-                HorizontalDivider()
-            }
-        },
-        bottomBar = {
-            if (state is EditorUiState.Success && !previewMode) {
-                EditorSymbolBar(
-                    backgroundColor = editorBackground ?: MaterialTheme.colorScheme.background,
-                    onInsert = { editorRef.value?.commitText(it) },
-                    onIndent = { editorRef.value?.commitText("\t") },
-                    onMoveLeft = { editorRef.value?.let { moveCursorHorizontally(it, forward = false) } },
-                    onMoveRight = { editorRef.value?.let { moveCursorHorizontally(it, forward = true) } }
-                )
-            }
-        }
-    ) { padding ->
-        val content = Modifier
-            .fillMaxSize()
-            .padding(padding)
-        when (val s = state) {
-            is EditorUiState.Loading -> CenterBox(content) { CircularProgressIndicator() }
-            is EditorUiState.Success -> Box(modifier = content) {
-                EditorSurface(
-                    state = s,
-                    modifier = Modifier.fillMaxSize(),
-                    editorRef = editorRef,
-                    settings = settings,
-                    baselineText = baselineText,
-                    initialLine = initialLine,
-                    onBackgroundResolved = { editorBackground = it },
-                    onCursorChanged = { l, c ->
-                        cursorLine = l
-                        cursorColumn = c
-                    },
-                    onContentChanged = { undo, redo, changed ->
-                        canUndo = undo
-                        canRedo = redo
-                        dirty = changed
-                    }
-                )
-                if (previewMode) {
-                    // 预览覆盖在编辑器上方（编辑器保留在组合中不销毁，切回源码不丢状态）。
-                    // 进入预览时快照编辑器当前文本，确保反映未保存的编辑。
-                    val previewText = remember(previewMode) {
-                        editorRef.value?.text?.toString() ?: s.content
-                    }
-                    MarkdownPreviewWebView(
-                        text = previewText,
-                        path = path,
-                        onExitPreview = { previewMode = false },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                    )
-                }
-            }
-            is EditorUiState.TooLarge -> CenterBox(content) {
-                HintText(
-                    stringResource(
-                        R.string.editor_file_too_large,
-                        s.sizeBytes / 1024 / 1024
-                    )
-                )
-            }
-            is EditorUiState.Binary -> CenterBox(content) {
-                HintText(stringResource(R.string.editor_binary_unsupported))
-            }
-            is EditorUiState.Error -> CenterBox(content) {
-                HintText(s.detail ?: stringResource(R.string.editor_load_failed))
-            }
-        }
-    }
-
-    if (showUnsavedDialog) {
-        AlertDialog(
-            onDismissRequest = { showUnsavedDialog = false },
-            title = { Text(stringResource(R.string.editor_unsaved_title)) },
-            text = { Text(stringResource(R.string.editor_unsaved_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showUnsavedDialog = false
-                    pendingExit = true
-                    requestSave()
-                }) { Text(stringResource(R.string.editor_save_and_exit)) }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showUnsavedDialog = false
-                    onBack()
-                }) { Text(stringResource(R.string.editor_dont_save)) }
-            }
+        val text = editor.text.toString()
+        viewModel.rememberDraft(activePath, text, dirty)
+        tabsViewModel.updateViewState(
+            path = activePath,
+            line = editor.cursor.leftLine + 1,
+            column = editor.cursor.leftColumn + 1,
+            scrollX = editor.offsetX,
+            scrollY = editor.offsetY
         )
     }
 
-    if (showSettings) {
-        EditorSettingsScreen(onBack = { showSettings = false })
+    fun requestSave() {
+        val editor = editorRef.value ?: return
+        pendingSaveText = editor.text.toString()
+        viewModel.save(pendingSaveText, activePath)
     }
+
+    fun handleBack() {
+        snapshotActive()
+        if (dirty) {
+            pendingClosePath = null
+            showUnsavedDialog = true
+        } else onBack()
+    }
+
+    fun requestCloseTab(tabPath: String) {
+        snapshotActive()
+        val tabDirty = tabPath in dirtyPaths || (tabPath == activePath && dirty)
+        if (tabDirty) {
+            pendingClosePath = tabPath
+            pendingExit = false
+            showUnsavedDialog = true
+        } else {
+            finishCloseTab(tabPath, editorRef, viewModel, tabsViewModel, onBack)
+        }
+    }
+
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+    BackHandler(enabled = !showSettings && !previewMode && !drawerState.isOpen) { handleBack() }
+    BackHandler(enabled = showSettings) { showSettings = false }
+
+    val drawerContent: @Composable () -> Unit = {
+        if (fileTreeHost != null) {
+            DismissibleDrawerSheet(
+                drawerContainerColor = settingsPageBackground(),
+                drawerTonalElevation = 0.dp,
+                modifier = Modifier
+                    .width(drawerWidth())
+                    .fillMaxHeight()
+            ) {
+                EditorFilesDrawer(
+                    browseState = fileTreeHost.browseState,
+                    expandedPaths = fileTreeHost.expandedPaths,
+                    expandingPath = fileTreeHost.expandingPath,
+                    fileOpPaths = fileTreeHost.fileOpPaths,
+                    clipboard = fileTreeHost.clipboard,
+                    selectedPath = activePath,
+                    onToggleExpand = fileTreeHost.onToggleExpand,
+                    onOpenFile = { filePath ->
+                        if (tabsState.tabs.any { it.path == filePath }) {
+                            // Already open: switch tabs in place so in-memory drafts and buffers
+                            // stay alive; no navigation meant for bootstrapping is needed.
+                            snapshotActive()
+                            tabsViewModel.activate(filePath)
+                        } else {
+                            // New file: hand it to the host, which opens it as a fresh tab.
+                            snapshotActive()
+                            fileTreeHost.onOpenFile(filePath)
+                        }
+                        scope.launch { drawerState.close() }
+                    },
+                    onRefreshBrowse = fileTreeHost.onRefreshBrowse,
+                    onCreateFile = fileTreeHost.onCreateFile,
+                    onCreateFolder = fileTreeHost.onCreateFolder,
+                    onRenameEntry = fileTreeHost.onRenameEntry,
+                    onDeleteEntry = fileTreeHost.onDeleteEntry,
+                    onCopyEntry = fileTreeHost.onCopyEntry,
+                    onCutEntry = fileTreeHost.onCutEntry,
+                    onPasteEntry = fileTreeHost.onPasteEntry,
+                    onClearClipboard = fileTreeHost.onClearClipboard
+                )
+            }
+        }
+    }
+
+    val editorBody: @Composable () -> Unit = {
+        Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                Column {
+                    TopAppBar(
+                        title = {},
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground
+                        ),
+                    navigationIcon = {
+                        if (embedded) {
+                            // Wide-screen workbench pane closes with an X, matching the other
+                            // pane contents; the file tree still lives in the chat sidebar.
+                            IconButton(onClick = { handleBack() }) {
+                                Icon(
+                                    FeatherIcons.X,
+                                    contentDescription = stringResource(R.string.common_close)
+                                )
+                            }
+                        } else {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(
+                                    FeatherIcons.Menu,
+                                    contentDescription = stringResource(R.string.editor_open_files_drawer)
+                                )
+                            }
+                        }
+                    },
+                        actions = {
+                            val editable = state is EditorUiState.Success
+                            if (isMarkdown && editable) {
+                                IconButton(onClick = { previewMode = !previewMode }) {
+                                    Icon(
+                                        if (previewMode) FeatherIcons.Code else FeatherIcons.Eye,
+                                        contentDescription = stringResource(
+                                            if (previewMode) R.string.editor_md_show_source
+                                            else R.string.editor_md_preview
+                                        )
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { editorRef.value?.undo() },
+                                enabled = editable && canUndo
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = stringResource(R.string.editor_undo)
+                                )
+                            }
+                            IconButton(
+                                onClick = { editorRef.value?.redo() },
+                                enabled = editable && canRedo
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Redo,
+                                    contentDescription = stringResource(R.string.editor_redo)
+                                )
+                            }
+                            IconButton(
+                                onClick = { requestSave() },
+                                enabled = editable && dirty && !saving
+                            ) {
+                                if (saving) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(
+                                        FeatherIcons.Save,
+                                        contentDescription = stringResource(R.string.common_save)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { showSettings = true },
+                                enabled = editable
+                            ) {
+                                Icon(
+                                    FeatherIcons.Settings,
+                                    contentDescription = stringResource(R.string.editor_settings)
+                                )
+                            }
+                        }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    EditorTabBar(
+                        tabs = tabsState.tabs,
+                        activePath = activePath,
+                        dirtyPaths = dirtyPaths + if (dirty) setOf(activePath) else emptySet(),
+                        onSelect = { tabPath ->
+                            if (tabPath == activePath) return@EditorTabBar
+                            snapshotActive()
+                            tabsViewModel.activate(tabPath)
+                        },
+                        onClose = { requestCloseTab(it) }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    FileTitleBar(
+                        fileName = activePath.substringAfterLast('/'),
+                        dirty = dirty,
+                        line = cursorLine,
+                        column = cursorColumn
+                    )
+                    HorizontalDivider()
+                }
+            },
+            bottomBar = {
+                if (state is EditorUiState.Success && !previewMode) {
+                    EditorSymbolBar(
+                        backgroundColor = editorBackground ?: MaterialTheme.colorScheme.background,
+                        onInsert = { editorRef.value?.commitText(it) },
+                        onIndent = { editorRef.value?.commitText("\t") },
+                        onMoveLeft = { editorRef.value?.let { moveCursorHorizontally(it, forward = false) } },
+                        onMoveRight = { editorRef.value?.let { moveCursorHorizontally(it, forward = true) } }
+                    )
+                }
+            }
+        ) { padding ->
+            val content = Modifier
+                .fillMaxSize()
+                .padding(padding)
+            when (val s = state) {
+                is EditorUiState.Loading -> CenterBox(content) { CircularProgressIndicator() }
+                is EditorUiState.Success -> Box(modifier = content) {
+                    // Recreate the editor view per document (tab switch or reload); switching tabs
+                    // swaps content, so the view keyed by (path, content) is rebuilt intentionally.
+                    key(activePath to s.content) {
+                        EditorSurface(
+                            state = s,
+                            modifier = Modifier.fillMaxSize(),
+                            editorRef = editorRef,
+                            settings = settings,
+                            baselineText = baselineText,
+                            initialLine = jumpLine,
+                            restoreLine = restoredTab?.cursorLine ?: 1,
+                            initialColumn = restoredTab?.cursorColumn ?: 1,
+                            initialScrollX = restoredTab?.scrollX ?: 0,
+                            initialScrollY = restoredTab?.scrollY ?: 0,
+                            onBackgroundResolved = { editorBackground = it },
+                            onCursorChanged = { l, c ->
+                                cursorLine = l
+                                cursorColumn = c
+                            },
+                            onScrollChanged = { x, y ->
+                                tabsViewModel.updateViewState(activePath, cursorLine, cursorColumn, x, y)
+                            },
+                            onContentChanged = { undo, redo, changed ->
+                                canUndo = undo
+                                canRedo = redo
+                                dirty = changed
+                                val editor = editorRef.value
+                                if (editor != null) {
+                                    viewModel.rememberDraft(activePath, editor.text.toString(), changed)
+                                }
+                            }
+                        )
+                    }
+                    if (previewMode) {
+                        val previewText = remember(previewMode) {
+                            editorRef.value?.text?.toString() ?: s.content
+                        }
+                        MarkdownPreviewWebView(
+                            text = previewText,
+                            path = activePath,
+                            onExitPreview = { previewMode = false },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background)
+                        )
+                    }
+                }
+                is EditorUiState.TooLarge -> CenterBox(content) {
+                    HintText(
+                        stringResource(
+                            R.string.editor_file_too_large,
+                            s.sizeBytes / 1024 / 1024
+                        )
+                    )
+                }
+                is EditorUiState.Binary -> CenterBox(content) {
+                    HintText(stringResource(R.string.editor_binary_unsupported))
+                }
+                is EditorUiState.Error -> CenterBox(content) {
+                    HintText(s.detail ?: stringResource(R.string.editor_load_failed))
+                }
+            }
+        }
+
+        if (showUnsavedDialog) {
+            AlertDialog(
+                onDismissRequest = { showUnsavedDialog = false },
+                title = { Text(stringResource(R.string.editor_unsaved_title)) },
+                text = { Text(stringResource(R.string.editor_unsaved_message)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showUnsavedDialog = false
+                        val closing = pendingClosePath
+                        if (closing == null) {
+                            pendingExit = true
+                            requestSave()
+                        } else if (closing == activePath) {
+                            pendingExit = false
+                            requestSave()
+                        } else {
+                            // Closing a dirty non-active tab: save its remembered draft, not the
+                            // active editor content.
+                            viewModel.save(viewModel.draftOf(closing).orEmpty(), closing)
+                        }
+                    }) { Text(stringResource(R.string.editor_save_and_exit)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showUnsavedDialog = false
+                        val closing = pendingClosePath
+                        pendingClosePath = null
+                        if (closing != null) {
+                            viewModel.dropBuffer(closing)
+                            finishCloseTab(closing, editorRef, viewModel, tabsViewModel, onBack)
+                        } else {
+                            onBack()
+                        }
+                    }) { Text(stringResource(R.string.editor_dont_save)) }
+                }
+            )
+        }
+
+        fileTreeHost?.pasteConflict?.let { (_, targetPath) ->
+            AlertDialog(
+                onDismissRequest = fileTreeHost.onCancelPasteOverwrite,
+                title = { Text(stringResource(R.string.file_browser_paste_conflict_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.file_browser_paste_conflict_message,
+                            targetPath.substringAfterLast('/')
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = fileTreeHost.onPasteOverwrite) {
+                        Text(stringResource(R.string.common_overwrite))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = fileTreeHost.onCancelPasteOverwrite) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                }
+            )
+        }
+
+        if (showSettings) {
+            EditorSettingsScreen(onBack = { showSettings = false })
+        }
+        }
+    }
+
+    if (fileTreeHost != null) {
+        DismissibleNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = true,
+            drawerContent = drawerContent
+        ) {
+            editorBody()
+        }
+    } else {
+        editorBody()
     }
 }
 
-/** 导航栏下方的文件名小栏：左侧文件名（未保存时名前加星号），右侧行:列与文件编码。 */
+private fun finishCloseTab(
+    tabPath: String,
+    editorRef: MutableState<CodeEditor?>,
+    viewModel: CodeEditorViewModel,
+    tabsViewModel: OpenedEditorsViewModel,
+    onBack: () -> Unit
+) {
+    viewModel.dropBuffer(tabPath)
+    tabsViewModel.close(tabPath) { next ->
+        if (next == null) onBack()
+    }
+}
+
+/** Slim bar under the tabs: file name (star when dirty), line:column, encoding. */
 @Composable
 private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: Int) {
     Row(
@@ -400,6 +624,13 @@ private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: In
     }
 }
 
+/**
+ * One editor document surface.
+ *
+ * [initialLine] is a chat deep-link target (center-jump, 1-based); [restoreLine]/[initialColumn] +
+ * the scroll offsets are the tab snapshot restored exactly when no jump is pending. The factory
+ * only runs once per document because the call site keys this composable by (path, content).
+ */
 @Composable
 private fun EditorSurface(
     state: EditorUiState.Success,
@@ -408,15 +639,20 @@ private fun EditorSurface(
     settings: EditorSettings,
     baselineText: MutableState<String>,
     initialLine: Int = 0,
+    restoreLine: Int = 1,
+    initialColumn: Int = 1,
+    initialScrollX: Int = 0,
+    initialScrollY: Int = 0,
     onBackgroundResolved: (Color) -> Unit,
     onCursorChanged: (line: Int, column: Int) -> Unit,
+    onScrollChanged: (scrollX: Int, scrollY: Int) -> Unit,
     onContentChanged: (canUndo: Boolean, canRedo: Boolean, dirty: Boolean) -> Unit
 ) {
-    // 与实际渲染出的 Compose 主题保持一致，而非跟随系统设置——应用内可单独切换主题。
+    // Match the rendered app theme, not the system setting; the theme is switchable in-app.
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val themeSurface = MaterialTheme.colorScheme.surface
-    // sora 的语法分析在后台线程跑，首帧必然还没上色。用一次渐显护住这段窗口，
-    // 把「先纯文本后突然上色」的跳变变成内容渐现。
+    // sora parses syntax on a background thread, so the first frame is never highlighted. A short
+    // fade-in turns the plain-text-then-sudden-colors flash into a smooth reveal.
     var revealed by remember(state.content) { mutableStateOf(false) }
     LaunchedEffect(state.content) { revealed = true }
     val contentAlpha by animateFloatAsState(
@@ -425,20 +661,22 @@ private fun EditorSurface(
         label = "editor-reveal"
     )
 
-    // 用户自己滚过之后就不再自动定位到目标行。View 只创建一次，标记要用实例稳定的 State
-    // 承载（factory 闭包捕获的是首次那个实例），换文件时由下面的 effect 显式复位。
+    // Once the user has scrolled by themselves, no more automatic positioning. The view is created
+    // once, so the flag lives in an instance-stable State (the factory closure captures the first
+    // instance); document switches reset it via the effect below.
     val scrolledByUser = remember { mutableStateOf(false) }
 
     AndroidView(
         modifier = modifier.graphicsLayer { alpha = contentAlpha },
         factory = { ctx ->
             TextMateSetup.applyTheme(dark)
-            // sora 默认把 8 秒内的连续输入并成一条撤销记录，一次撤销会吞掉整段输入。
+            // sora merges consecutive input within its window into a single undo record, one undo
+            // would swallow a whole paragraph; keep the window short for discrete undo steps.
             UndoManager.setMergeTimeLimit(UNDO_MERGE_WINDOW_MS)
             CodeEditor(ctx).apply {
-                // sora 的 getScrollMaxY() 在 LayoutParams 为空或高度是 WRAP_CONTENT 时会跳过
-                // verticalExtraSpaceFactor，底部额外滚动空间（下面那行设的半屏留白）就没了。
-                // Compose 的 AndroidView 添加子 View 时用的正是默认 WRAP_CONTENT，必须显式改掉。
+                // sora's getScrollMaxY() skips verticalExtraSpaceFactor when LayoutParams is null
+                // or WRAP_CONTENT, losing the bottom overscroll room set below. AndroidView adds
+                // child views with the default WRAP_CONTENT, so set MATCH_PARENT explicitly.
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
@@ -447,11 +685,13 @@ private fun EditorSurface(
                 typefaceText = Typeface.MONOSPACE
                 setTextSize(settings.fontSizeSp.toFloat())
                 setWordwrap(settings.wordWrap)
-                // 关闭光标移动动画：切换行/列时当前行高亮原位消失、目标位出现，不逐行滑动。
+                // Disable the cursor move animation: the current-line highlight jumps in place
+                // instead of sliding line by line.
                 isCursorAnimationEnabled = false
-                // 行号左侧固定预留一点间距，避免数字贴边。
+                // Fixed left gap for line numbers so digits do not hug the edge.
                 setLineNumberMarginLeft(spToPx(ctx, LINE_NUMBER_MARGIN_SP))
-                // 滚到底后仍可再上滑一段：额外视口空间为半屏（sora 默认值，显式固定）。
+                // Keep overscroll room below the last line: extra viewport = half a screen (sora
+                // default, pinned explicitly).
                 verticalExtraSpaceFactor = VERTICAL_EXTRA_SPACE_FACTOR
                 isBlockLineEnabled = settings.showIndentGuide
                 nonPrintablePaintingFlags =
@@ -462,12 +702,13 @@ private fun EditorSurface(
                 state.scopeName?.let { scope ->
                     setEditorLanguage(TextMateLanguage.create(scope, false))
                 }
-                // 先 setText 再订阅：初始设置不计入脏标记，只有用户后续编辑才触发。
+                // setText before subscribing: the initial content must not mark the file dirty.
                 setText(state.content)
                 val editorView = this
                 subscribeAlways(ContentChangeEvent::class.java) {
-                    // UndoManager 先改文本、后移动栈指针，事件回调里同帧读 canUndo/canRedo 拿到的
-                    // 是移动前的旧值（撤销后重做键不亮、撤销到底后撤销键仍亮），延后一帧才准。
+                    // UndoManager mutates the text first and moves the stack pointers after, so
+                    // canUndo/canRedo read in the same frame are one step stale (redo key dark
+                    // after undo, undo key lit at stack bottom). Defer one frame to be accurate.
                     editorView.post {
                         val baseline = baselineText.value
                         val text = editorView.text
@@ -480,17 +721,22 @@ private fun EditorSurface(
                 }
                 subscribeAlways(SelectionChangeEvent::class.java) {
                     onCursorChanged(cursor.leftLine + 1, cursor.leftColumn + 1)
+                    // Keep the tab snapshot fresh for pure cursor moves that do not scroll.
+                    onScrollChanged(editorView.offsetX, editorView.offsetY)
                 }
                 subscribeAlways(ScrollEvent::class.java) { event ->
-                    // sora 在尺寸变化后会经 touchHandler 做一次滚动 clamp，事件 cause 同样是
-                    // CAUSE_USER_DRAG 但首尾坐标相同（y=0->0）。编辑器刚打开就会连发几条这种
-                    // 零位移事件，只看 cause 会把它们当成「用户已手动滚动」而放弃行号定位。
+                    // After size changes sora clamps scroll through touchHandler with the same
+                    // CAUSE_USER_DRAG but identical start/end offsets. A fresh editor emits a
+                    // burst of those zero-move events; matching cause alone would mistake them
+                    // for user scrolls and abandon line positioning.
                     val moved = event.startY != event.endY || event.startX != event.endX
-                    if (moved &&
-                        (event.cause == ScrollEvent.CAUSE_USER_DRAG ||
-                            event.cause == ScrollEvent.CAUSE_USER_FLING)
-                    ) {
-                        scrolledByUser.value = true
+                    if (moved) {
+                        onScrollChanged(editorView.offsetX, editorView.offsetY)
+                        if (event.cause == ScrollEvent.CAUSE_USER_DRAG ||
+                            event.cause == ScrollEvent.CAUSE_USER_FLING
+                        ) {
+                            scrolledByUser.value = true
+                        }
                     }
                 }
                 editorRef.value = this
@@ -504,7 +750,8 @@ private fun EditorSurface(
 
     LaunchedEffect(state.content) { baselineText.value = state.content }
 
-    // 深浅主题切换时重设配色，而非重建编辑器——保住未保存内容与撤销栈。
+    // Re-apply colors on theme switch instead of recreating the editor, keeping unsaved content
+    // and the undo stack intact.
     val editor = editorRef.value
     LaunchedEffect(dark, themeSurface, editor) {
         editor ?: return@LaunchedEffect
@@ -521,18 +768,33 @@ private fun EditorSurface(
     LaunchedEffect(settings.wordWrap, editor) {
         editor?.setWordwrap(settings.wordWrap)
     }
-    // 从聊天区链接带行号打开时跳到目标行并滚动到可视区（行号 1 基，sora 为 0 基）。
+    // Positioning after the document view is (re)created.
     //
-    // 必须等编辑器完成首次布局：ensurePositionVisible 按 getHeight() 算滚动量，而 onSizeChanged
-    // 会按新尺寸 clamp 滚动偏移、自动换行下还会重建整个布局——宽高仍为 0 时跳的那一下会被随后的
-    // 首次布局抹掉，表现就是「停在文件开头没跳过去」。
+    // initialLine > 0 means a chat deep link: jump to the target line and center it (1-based here,
+    // 0-based inside sora). Otherwise the tab snapshot is restored: exact cursor column and scroll
+    // offsets. The two never mix — a pending jump wins over the snapshot.
     //
-    // 字号与自动换行读自 DataStore，真实值往往比首帧晚到，setTextSize / setWordwrap 同样重建布局
-    // 打乱位置，所以它们也进 key 重新定位一次；用户自己滚动过之后（scrolledByUser）不再拽回目标行。
+    // Must wait for the first layout: ensurePositionVisible computes scroll from getHeight(), while
+    // onSizeChanged clamps offsets against the new size and word wrap rebuilds the whole layout —
+    // a jump made at zero size is wiped by the first layout pass, so the file would open at the top
+    // instead.
+    //
+    // Font size and word wrap come from DataStore and usually arrive after the first frame;
+    // setTextSize / setWordwrap rebuild the layout as well, hence they are effect keys too. After
+    // the user scrolls by hand (scrolledByUser), no more automatic repositioning.
     LaunchedEffect(state.content, initialLine) { scrolledByUser.value = false }
-    LaunchedEffect(editor, initialLine, state.content, settings.wordWrap, settings.fontSizeSp) {
+    LaunchedEffect(
+        editor,
+        state.content,
+        initialLine,
+        settings.wordWrap,
+        settings.fontSizeSp
+    ) {
         val editorView = editor ?: return@LaunchedEffect
-        if (initialLine <= 0 || scrolledByUser.value) return@LaunchedEffect
+        if (scrolledByUser.value) return@LaunchedEffect
+        val jump = initialLine > 0
+        val targetLine = (if (jump) initialLine else restoreLine).coerceAtLeast(1)
+        val targetColumn = (if (jump) 1 else initialColumn).coerceAtLeast(1)
         var frames = 0
         while ((editorView.width == 0 || editorView.height == 0) &&
             frames < LINE_JUMP_LAYOUT_WAIT_FRAMES
@@ -543,18 +805,25 @@ private fun EditorSurface(
         if (editorView.width == 0 || editorView.height == 0 || scrolledByUser.value) {
             return@LaunchedEffect
         }
-        val line = (initialLine - 1).coerceIn(0, (editorView.lineCount - 1).coerceAtLeast(0))
-        // 定位后校验目标行是否真的停在期望位置，没停上就重试：布局重建（设置迟到、语法
-        // 分析完成、自动换行重排）会把刚定好的位置冲掉，单次定位不够。
+        val line = (targetLine - 1).coerceIn(0, (editorView.lineCount - 1).coerceAtLeast(0))
+        val column = (targetColumn - 1).coerceIn(0, editorView.text.getColumnCount(line))
+        // After positioning, verify the target line really settled where expected; retry when a
+        // layout rebuild (late settings, finished syntax parsing, re-wrap) wiped it — a single
+        // positioning pass is not enough.
         var attempt = 0
         while (attempt < LINE_JUMP_MAX_ATTEMPTS && !scrolledByUser.value) {
-            editorView.setSelection(line, 0)
-            val desired = centerScrollOffset(editorView, line)
-            if (desired != null) {
-                scrollVerticallyTo(editorView, desired)
+            editorView.setSelection(line, column)
+            val desired = if (jump) {
+                centerScrollOffset(editorView, line)
             } else {
-                // 拿不到布局信息时退回官方的「仅保证可见」，无动画避免被布局重建打断在半路。
-                editorView.ensurePositionVisible(line, 0, true)
+                initialScrollY.coerceIn(0, editorView.scrollMaxY.coerceAtLeast(0))
+            }
+            if (desired != null) {
+                scrollToOffset(editorView, initialScrollX, desired)
+            } else {
+                // Without layout info, fall back to the official make-visible call; no animation,
+                // so a layout rebuild cannot interrupt it halfway.
+                editorView.ensurePositionVisible(line, column, true)
             }
             repeat(LINE_JUMP_VERIFY_FRAMES) { withFrameNanos { } }
             val settled = if (desired != null) {
@@ -569,6 +838,7 @@ private fun EditorSurface(
             if (settled) break
             attempt++
         }
+        onCursorChanged(line + 1, column + 1)
     }
     LaunchedEffect(settings.showIndentGuide, editor) {
         editor?.isBlockLineEnabled = settings.showIndentGuide
@@ -662,10 +932,11 @@ private fun HintText(text: String) {
 }
 
 /**
- * 给编辑器底色掺入当前主题的表面色。
+ * Mix the themed surface color into the editor background.
  *
- * TextMate 主题的背景（Dark+ 的 #1E1E1E、Light+ 的纯白）是照 VSCode 的中性色调的，
- * 原样使用会让编辑器在带色温的主题下明显脱离其余界面。保留一成原色以维持编辑区的基调。
+ * TextMate theme backgrounds (Dark+ #1E1E1E, Light+ plain white) are tuned to VSCode's neutral
+ * tones; used as-is they clash with themes carrying a color temperature. Keep a tenth of the
+ * original color to preserve the editing area's base tone.
  */
 private fun applyThemedBackground(editor: CodeEditor, themeSurface: Color) {
     val scheme = editor.colorScheme
@@ -676,6 +947,7 @@ private fun applyThemedBackground(editor: CodeEditor, themeSurface: Color) {
     )
 }
 
+/** Slight brightness gap between the line-number gutter and the editing area; theme-aware. */
 private fun applyLineNumberBackground(editor: CodeEditor, dark: Boolean) {
     val scheme = editor.colorScheme
     val base = Color(scheme.getColor(EditorColorScheme.WHOLE_BACKGROUND))
@@ -683,13 +955,11 @@ private fun applyLineNumberBackground(editor: CodeEditor, dark: Boolean) {
     scheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, lerp(base, target, 0.08f).toArgb())
 }
 
-/** 行号 gutter 背景与编辑区拉开一点亮度差便于区分。基于编辑器背景色自适应，随主题走。 */
-
-/** 把 sp 换算为像素，用于行号左边距等需 px 的 sora API。 */
+/** sp to px, for sora APIs that take pixel values such as the line-number left margin. */
 private fun spToPx(context: android.content.Context, sp: Float): Float =
     TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
 
-/** 根据“显示空白符号”与“显示自动换行箭头”开关合成 sora 的非打印字符绘制标志。 */
+/** Compose sora's non-printable drawing flags from the whitespace / wrap-arrow toggles. */
 private fun nonPrintableFlags(showWhitespace: Boolean, showWrapArrow: Boolean): Int {
     var flags = 0
     if (showWhitespace) {
@@ -705,7 +975,7 @@ private fun nonPrintableFlags(showWhitespace: Boolean, showWrapArrow: Boolean): 
     return flags
 }
 
-/** 符号栏方向键：把光标水平移动一个字符，跨越行首/行尾时换到相邻行。 */
+/** Symbol bar arrow: move the cursor one character horizontally, wrapping across line edges. */
 private fun moveCursorHorizontally(editor: CodeEditor, forward: Boolean) {
     val cursor = editor.cursor
     val line = cursor.leftLine
@@ -724,7 +994,7 @@ private fun moveCursorHorizontally(editor: CodeEditor, forward: Boolean) {
     }
 }
 
-/** 底部快捷栏的常用符号，点击在光标处插入。 */
+/** Symbols offered by the bottom quick bar; tapping inserts at the cursor. */
 private val EDITOR_SYMBOLS = listOf(
     "{", "}", "(", ")", "[", "]", "<", ">",
     "=", "+", "-", "*", "/", "\\",
@@ -732,51 +1002,66 @@ private val EDITOR_SYMBOLS = listOf(
     "|", "&", "!", "?", "@", "#", "\$", "%"
 )
 
-/** 内容渐显时长：给后台语法分析留出窗口，同时不致于让用户觉得打开变慢。 */
+/** Content fade-in duration: leaves room for background syntax parsing without feeling slow. */
 private const val HIGHLIGHT_REVEAL_MS = 200
 
-/** 撤销合并窗口：间隔超过它的输入不再并入上一条撤销记录，撤销才是分步的。sora 默认 8000ms。 */
+/**
+ * Undo merge window: input spaced further apart starts a new undo record, giving discrete undo
+ * steps. sora default is 8000ms.
+ */
 private const val UNDO_MERGE_WINDOW_MS = 500L
 
-/** 行号左侧预留间距（sp）。 */
+/** Left padding reserved for line numbers, in sp. */
 private const val LINE_NUMBER_MARGIN_SP = 2f
 
-/** 文件名小栏高度与左右内边距。 */
+/** Slim file-name bar height and horizontal padding. */
 private val FILE_TITLE_BAR_HEIGHT = 16.dp
 private val FILE_TITLE_HORIZONTAL_PADDING = 12.dp
 
-/** 文件读写统一按 UTF-8，小栏右侧展示用。 */
+/** Files are read and written as UTF-8; shown on the right of the slim bar. */
 private const val FILE_ENCODING = "UTF-8"
 
-/** 垂直额外视口空间系数（占编辑器高度的比例，取值 [0,1]），用于底部过度滚动。 */
+/**
+ * Vertical extra viewport factor (share of editor height, in [0,1]) used for bottom overscroll.
+ */
 private const val VERTICAL_EXTRA_SPACE_FACTOR = 0.5f
 
-/** 编辑器底色向主题表面色靠拢的比例。 */
+/** Ratio that pulls the editor background toward the themed surface color. */
 private const val EDITOR_THEME_TINT = 0.9f
 
-/** 带行号打开时等编辑器完成首次布局的最多帧数，避免宽高迟迟不就绪时死等。 */
+/**
+ * Max frames to wait for the editor's first layout when opening with a line number, avoiding an
+ * endless wait while width/height stay zero.
+ */
 private const val LINE_JUMP_LAYOUT_WAIT_FRAMES = 30
 
-/** 定位后校验目标行是否停在期望位置的重试次数，以及每次校验前等待的帧数。 */
+/** Retry limit for verifying the target line settled, and frames waited before each check. */
 private const val LINE_JUMP_MAX_ATTEMPTS = 8
 private const val LINE_JUMP_VERIFY_FRAMES = 3
 
 /**
- * 让目标行居中所需的垂直滚动量（已按可滚范围收敛，文件首尾附近自然贴边）。
- * 布局尚不可用时返回 null，由调用方退回官方的「仅保证可见」。
+ * Vertical scroll needed to center the target line (clamped to the scrollable range, hugging the
+ * edges near file ends). Returns null while layout is unavailable; the caller then falls back to
+ * the official make-visible call.
  */
 private fun centerScrollOffset(editor: CodeEditor, line: Int): Int? = runCatching {
-    // getCharLayoutOffset 返回的 [0] 是该行所在 row 的底部 y。
+    // getCharLayoutOffset [0] is the bottom y of the row containing the line.
     val rowBottom = editor.layout.getCharLayoutOffset(line, 0)[0]
     val rowTop = rowBottom - editor.rowHeight
     (rowTop - (editor.height - editor.rowHeight) / 2f).toInt()
         .coerceIn(0, editor.scrollMaxY.coerceAtLeast(0))
 }.getOrNull()
 
-/** 无动画落位到指定垂直滚动量，与 sora 内部 ensurePositionVisible 的无动画分支同款做法。 */
-private fun scrollVerticallyTo(editor: CodeEditor, offsetY: Int) {
+/** Land on an absolute scroll offset with no animation, mirroring sora's internal no-anim branch. */
+private fun scrollToOffset(editor: CodeEditor, offsetX: Int, offsetY: Int) {
     val scroller = editor.scroller
-    scroller.startScroll(editor.offsetX, editor.offsetY, 0, offsetY - editor.offsetY, 0)
+    scroller.startScroll(
+        editor.offsetX,
+        editor.offsetY,
+        offsetX - editor.offsetX,
+        offsetY - editor.offsetY,
+        0
+    )
     scroller.abortAnimation()
     editor.invalidate()
 }

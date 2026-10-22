@@ -81,6 +81,7 @@ import com.aicode.feature.agent.presentation.component.ChatDrawerContent
 import com.aicode.feature.agent.presentation.component.chatImageLoader
 import com.aicode.feature.agent.presentation.component.openSentAttachment
 import com.aicode.feature.editor.presentation.CodeEditorScreen
+import com.aicode.feature.editor.presentation.EditorFileTreeHost
 import com.aicode.feature.browser.presentation.BrowserScreen
 import com.aicode.feature.git.presentation.GitViewModel
 import com.aicode.feature.credentials.presentation.component.CredentialScreen
@@ -514,23 +515,30 @@ fun AppNavigation(
         paneKind = WorkbenchPaneKind.NONE
     }
 
-    // 打开文件：大屏进右栏，窄窗跳全屏编辑器页。
+    // Open a file: on wide screens inside the right workbench pane, on narrow screens via the
+    // fullscreen editor route.
     val openFile: (String, Int, Boolean) -> Unit = { filePath, line, fromDrawer ->
         if (expanded) {
             paneEditorPath = filePath
             paneEditorLine = line
             paneKind = WorkbenchPaneKind.EDITOR
-            // 常驻侧栏不需要关；平板竖屏等仍用 modal 抽屉的情况下选完文件要收起。
+            // The permanent sidebar does not need closing; with a modal drawer (tablet portrait
+            // etc.) the drawer should collapse after a file is picked.
             if (!permanentDrawer) scope.launch { drawerState.close() }
         } else {
             scope.launch { drawerState.close() }
             navController.navigate(
                 "editor?path=${android.net.Uri.encode(filePath)}&line=$line&drawer=$fromDrawer"
-            )
+            ) {
+                // Reuse the editor entry when it is already on top so stacked destinations do not
+                // pile up duplicated editor screens.
+                launchSingleTop = true
+            }
         }
     }
 
-    // 文件树里点文件：图片进内置全屏查看器、APK 走系统安装器，其余仍进编辑器。
+    // Tapping a file in the tree: images go to the built-in fullscreen viewer, APKs to the system
+    // installer, everything else to the editor.
     val drawerImageViewerState = rememberImageViewerState()
     val drawerDecodeSpec = rememberViewerDecodeSpec()
     val drawerImageLoad = remember(agentViewModel.fileAccess, drawerDecodeSpec) {
@@ -561,7 +569,50 @@ fun AppNavigation(
         }
     }
 
-    // 终端 / Git：大屏在右栏内开合切换，窄窗跳全屏页。
+    // Shared file-tree data and actions for the editor's standard navigation drawer. Same sources
+    // as the chat sidebar, so both stay in sync no matter where a file is opened from.
+    val editorFileTreeHost = EditorFileTreeHost(
+        browseState = browseState,
+        expandedPaths = expandedPaths,
+        expandingPath = expandingPath,
+        fileOpPaths = fileOpPaths,
+        clipboard = browseClipboard,
+        pasteConflict = pasteConflict,
+        onToggleExpand = { agentViewModel.toggleExpand(it) },
+        onOpenFile = openTreeEntry,
+        onRefreshBrowse = { agentViewModel.refreshBrowse() },
+        onCreateFile = { parent, name ->
+            agentViewModel.createBrowseFile(parent, name) { ok ->
+                if (!ok) toastFileOpFailed(context, R.string.file_browser_create_failed)
+            }
+        },
+        onCreateFolder = { parent, name ->
+            agentViewModel.createBrowseFolder(parent, name) { ok ->
+                if (!ok) toastFileOpFailed(context, R.string.file_browser_create_failed)
+            }
+        },
+        onRenameEntry = { path, newName ->
+            agentViewModel.renameBrowseEntry(path, newName) { ok ->
+                if (!ok) toastFileOpFailed(context, R.string.file_browser_rename_failed)
+            }
+        },
+        onDeleteEntry = { path ->
+            agentViewModel.deleteBrowseEntry(path) { ok ->
+                if (!ok) toastFileOpFailed(context, R.string.file_browser_delete_failed)
+            }
+        },
+        onCopyEntry = { path, name -> agentViewModel.copyBrowseEntry(path, name) },
+        onCutEntry = { path, name -> agentViewModel.cutBrowseEntry(path, name) },
+        onPasteEntry = { targetDir, onResult ->
+            agentViewModel.pasteBrowseEntry(targetDir, onResult)
+        },
+        onPasteOverwrite = { agentViewModel.pasteBrowseEntryOverwrite() },
+        onCancelPasteOverwrite = { agentViewModel.clearPasteConflict() },
+        onClearClipboard = { agentViewModel.clearBrowseClipboard() }
+    )
+
+    // Terminal / Git: on wide screens they toggle inside the workbench pane, on narrow screens
+    // they become fullscreen routes.
     val openWorkbench: (WorkbenchPaneKind) -> Unit = { target ->
         if (expanded) {
             paneKind = if (paneKind == target) WorkbenchPaneKind.NONE else target
@@ -576,7 +627,8 @@ fun AppNavigation(
         }
     }
 
-    // 侧栏内容：modal 抽屉与大屏常驻栏共用同一份，不在两处重复几十行参数。
+    // Sidebar body: the modal drawer and the permanent wide-screen sidebar share it, avoiding a
+    // few dozen duplicated parameters in two places.
     val drawerBody: @Composable () -> Unit = {
         ChatDrawerContent(
             sessions = sessions,
@@ -835,12 +887,14 @@ fun AppNavigation(
                     }
                 )
             ) { entry ->
-                // 从侧边栏文件页进入时返回要重新弹出抽屉（否则看完一个文件就得重新拉开抽屉进目录）；
-                // 从聊天区链接进入时返回应回到聊天，不弹抽屉。
+                // Entering from the sidebar file tree reopens the drawer on back (otherwise every
+                // read file would force re-pulling the drawer); from chat links, back returns to
+                // chat without reopening the drawer.
                 val openDrawerOnBack = entry.arguments?.getBoolean("drawer") ?: false
                 CodeEditorScreen(
                     path = entry.arguments?.getString("path").orEmpty(),
                     initialLine = entry.arguments?.getInt("line") ?: 0,
+                    fileTreeHost = editorFileTreeHost,
                     onBack = {
                         navController.popBackStack()
                         if (openDrawerOnBack && !expanded) scope.launch { drawerState.open() }
