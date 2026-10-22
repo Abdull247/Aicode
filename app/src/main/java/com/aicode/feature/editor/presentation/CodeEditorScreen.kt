@@ -558,7 +558,9 @@ fun CodeEditorScreen(
     if (fileTreeHost != null) {
         DismissibleNavigationDrawer(
             drawerState = drawerState,
-            gesturesEnabled = true,
+            // Hamburger-only opening: edge swipes fight with code editing gestures and stall the
+            // editor. Closing still works via system back (see the BackHandlers above).
+            gesturesEnabled = false,
             drawerContent = drawerContent
         ) {
             editorBody()
