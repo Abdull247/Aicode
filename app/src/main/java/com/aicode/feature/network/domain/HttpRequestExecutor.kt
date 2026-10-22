@@ -12,42 +12,87 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
 
 @Singleton
 class HttpRequestExecutor @Inject constructor(
     private val httpClient: OkHttpClient
 ) {
-    fun execute(method: HttpMethod, url: String): NetworkSendState {
+    fun execute(
+        method: HttpMethod,
+        url: String,
+        queryJson: String = DEFAULT_JSON_OBJECT,
+        headersJson: String = DEFAULT_JSON_OBJECT,
+        bodyJson: String = DEFAULT_JSON_OBJECT,
+        authJson: String = DEFAULT_AUTH_JSON,
+        settings: NetworkClientSettings = NetworkClientSettings()
+    ): NetworkSendState {
         val requestId = UUID.randomUUID().toString().take(8)
         val timings = CallTimings()
-        val client = httpClient.newBuilder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+        val timeout = settings.timeoutSeconds.toLong().coerceIn(
+            MIN_TIMEOUT_SECONDS.toLong(),
+            MAX_TIMEOUT_SECONDS.toLong()
+        )
+        val clientBuilder = httpClient.newBuilder()
+            .connectTimeout(timeout, TimeUnit.SECONDS)
+            .readTimeout(timeout, TimeUnit.SECONDS)
+            .writeTimeout(timeout, TimeUnit.SECONDS)
+            .followRedirects(settings.followRedirects)
+            .followSslRedirects(settings.followRedirects)
             .eventListener(timings)
-            .build()
+        if (!settings.sslVerify) {
+            runCatching {
+                val trustAll = TrustAllManager()
+                val sslContext = SSLContext.getInstance("TLS").apply {
+                    init(null, arrayOf(trustAll), SecureRandom())
+                }
+                clientBuilder.sslSocketFactory(sslContext.socketFactory, trustAll)
+                clientBuilder.hostnameVerifier { _, _ -> true }
+            }
+        }
+        val client = clientBuilder.build()
 
-        val hasBody = method == HttpMethod.POST || method == HttpMethod.PUT || method == HttpMethod.PATCH
+        val resolvedUrl = mergeQueryIntoUrl(url, queryJson)
+        val requestHeaders = mergeHeaders(jsonToHeaders(headersJson), authHeaders(authJson))
+        val hasBody = methodHasBody(method)
+        val bodyBytes = if (hasBody && !isBlankJson(bodyJson)) {
+            bodyJson.toByteArray(Charsets.UTF_8)
+        } else {
+            ByteArray(0)
+        }
+        val userContentType = requestHeaders.firstOrNull {
+            it.name.equals("Content-Type", ignoreCase = true)
+        }?.value
         val requestBody = if (hasBody) {
-            ByteArray(0).toRequestBody("application/json".toMediaTypeOrNull())
+            bodyBytes.toRequestBody(
+                (userContentType ?: "application/json; charset=utf-8").toMediaTypeOrNull()
+            )
         } else {
             null
         }
-        val request = Request.Builder()
-            .url(url)
+        val builder = Request.Builder()
+            .url(resolvedUrl)
             .method(method.name, requestBody)
-            .build()
+        requestHeaders.filter { header ->
+            header.name.isNotBlank() && !(hasBody && header.name.equals("Content-Type", ignoreCase = true))
+        }.forEach { header ->
+            builder.addHeader(header.name, header.value)
+        }
+        val request = builder.build()
 
         val startedAt = System.nanoTime()
         return try {
             client.newCall(request).execute().use { response ->
                 val durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-                val bodyBytes = response.body?.bytes() ?: ByteArray(0)
-                val bodyText = bodyBytes.toString(Charsets.UTF_8)
+                val responseBytes = response.body?.bytes() ?: ByteArray(0)
+                val bodyText = responseBytes.toString(Charsets.UTF_8)
                 val headers = response.headers.map { NetworkHeader(it.first, it.second) }
                 val exchange = NetworkExchange(
                     headers = headers,
@@ -55,13 +100,13 @@ class HttpRequestExecutor @Inject constructor(
                     metrics = timings.toMetrics(
                         requestId = requestId,
                         method = method.name,
-                        url = url,
+                        url = resolvedUrl,
                         statusCode = response.code,
                         statusText = response.message,
                         protocol = response.protocol.toString(),
                         durationMs = durationMs,
                         requestBytes = request.body?.contentLength()?.coerceAtLeast(0L) ?: 0L,
-                        responseBytes = bodyBytes.size.toLong(),
+                        responseBytes = responseBytes.size.toLong(),
                         contentType = response.header("Content-Type").orEmpty()
                     )
                 )
@@ -75,7 +120,7 @@ class HttpRequestExecutor @Inject constructor(
                     metrics = timings.toMetrics(
                         requestId = requestId,
                         method = method.name,
-                        url = url,
+                        url = resolvedUrl,
                         durationMs = durationMs
                     )
                 )
@@ -84,6 +129,21 @@ class HttpRequestExecutor @Inject constructor(
             NetworkSendState.Failure(e.message ?: e.javaClass.simpleName)
         }
     }
+}
+
+private fun mergeHeaders(
+    explicit: List<NetworkHeader>,
+    auth: List<NetworkHeader>
+): List<NetworkHeader> {
+    if (auth.isEmpty()) return explicit
+    val names = explicit.map { it.name.lowercase() }.toSet()
+    return explicit + auth.filter { it.name.lowercase() !in names }
+}
+
+private class TrustAllManager : X509TrustManager {
+    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
 }
 
 private class CallTimings : EventListener() {

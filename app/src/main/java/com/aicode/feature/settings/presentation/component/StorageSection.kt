@@ -107,7 +107,9 @@ internal fun StorageSection(
                     val entry = state.entries[category]
                     val details = entry?.details.orEmpty().filter {
                         category != StorageCategory.AiConfig ||
-                            it.key == StorageDetailKey.TOOL_OUTPUT || it.key == StorageDetailKey.VISION_SESSIONS
+                            it.key == StorageDetailKey.TOOL_OUTPUT ||
+                            it.key == StorageDetailKey.VISION_SESSIONS ||
+                            it.key == StorageDetailKey.NETWORK_HISTORY
                     }
                     val cleanupKind = when (category) {
                         StorageCategory.Logs -> CleanupKind.Logs
@@ -130,6 +132,7 @@ internal fun StorageSection(
                             val detailCleanup = when (detail.key) {
                                 StorageDetailKey.TOOL_OUTPUT -> CleanupKind.ToolOutput
                                 StorageDetailKey.VISION_SESSIONS -> CleanupKind.VisionSessions
+                                StorageDetailKey.NETWORK_HISTORY -> CleanupKind.NetworkHistory
                                 else -> null
                             }
                             DetailRow(

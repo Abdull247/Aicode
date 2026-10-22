@@ -1,5 +1,6 @@
 package com.aicode.feature.network.presentation
 
+import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -53,11 +56,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -66,25 +72,29 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aicode.R
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
 import com.aicode.core.ui.AdaptiveModalBottomSheet
+import com.aicode.core.ui.AppSwitch
 import com.aicode.core.ui.AppTextField
 import com.aicode.core.ui.FloatingTabBar
 import com.aicode.core.ui.FloatingTabItem
 import com.aicode.feature.network.domain.HttpMethod
+import com.aicode.feature.network.domain.JsonViewMode
 import com.aicode.feature.network.domain.NetworkHeader
+import com.aicode.feature.network.domain.NetworkHistoryEntry
 import com.aicode.feature.network.domain.NetworkMetrics
 import com.aicode.feature.network.domain.NetworkPane
 import com.aicode.feature.network.domain.NetworkSendState
+import com.aicode.feature.network.domain.RequestTab
 import com.aicode.feature.network.domain.ResponseTab
 import com.aicode.feature.network.domain.ResponseViewMode
 import com.aicode.feature.network.domain.bodyToTableRows
 import com.aicode.feature.network.domain.headersToJson
+import com.aicode.feature.network.domain.jsonToTreeNodes
 import com.aicode.feature.network.domain.prettyPrintJson
 import com.aicode.feature.settings.presentation.component.SettingsDivider
 import com.aicode.feature.settings.presentation.component.SettingsGroup
@@ -94,11 +104,17 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.MoreHorizontal
+import compose.icons.feathericons.Clock
+import compose.icons.feathericons.Copy
 import compose.icons.feathericons.FileText
+import compose.icons.feathericons.MoreHorizontal
 import compose.icons.feathericons.Send
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.X
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,6 +128,7 @@ fun NetworkRequestScreen(
     val requestScroll = rememberScrollState()
     val responseScroll = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
 
     val tabsScrolling by remember {
         derivedStateOf { requestScroll.isScrollInProgress || responseScroll.isScrollInProgress }
@@ -155,6 +172,21 @@ fun NetworkRequestScreen(
                             onDismissRequest = { menuExpanded = false }
                         ) {
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.network_request_history)) },
+                                leadingIcon = {
+                                    Icon(
+                                        FeatherIcons.Clock,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.refreshHistory()
+                                    showHistory = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.common_clear)) },
                                 leadingIcon = {
                                     Icon(
@@ -187,10 +219,24 @@ fun NetworkRequestScreen(
                     NetworkPane.REQUEST -> RequestPane(
                         url = state.url,
                         method = state.method,
+                        queryJson = state.queryJson,
+                        headersJson = state.headersJson,
+                        bodyJson = state.bodyJson,
+                        authJson = state.authJson,
+                        followRedirects = state.settings.followRedirects,
+                        sslVerify = state.settings.sslVerify,
+                        timeoutSeconds = state.settings.timeoutSeconds,
                         sendState = state.sendState,
                         scrollState = requestScroll,
                         onUrlChange = viewModel::updateUrl,
                         onSelectMethod = viewModel::selectMethod,
+                        onQueryChange = viewModel::updateQueryJson,
+                        onHeadersChange = viewModel::updateHeadersJson,
+                        onBodyChange = viewModel::updateBodyJson,
+                        onAuthChange = viewModel::updateAuthJson,
+                        onFollowRedirects = viewModel::updateFollowRedirects,
+                        onSslVerify = viewModel::updateSslVerify,
+                        onTimeoutChange = viewModel::updateTimeout,
                         onSend = viewModel::send
                     )
                     NetworkPane.RESPONSE -> ResponsePane(
@@ -212,107 +258,369 @@ fun NetworkRequestScreen(
             )
         }
     }
+
+    if (showHistory) {
+        HistorySheet(
+            entries = state.history,
+            selectedId = state.selectedHistoryId,
+            onSelected = { entry ->
+                viewModel.loadHistory(entry)
+                showHistory = false
+            },
+            onDismiss = { showHistory = false }
+        )
+    }
 }
 
 @Composable
 private fun RequestPane(
     url: String,
     method: HttpMethod,
+    queryJson: String,
+    headersJson: String,
+    bodyJson: String,
+    authJson: String,
+    followRedirects: Boolean,
+    sslVerify: Boolean,
+    timeoutSeconds: Int,
     sendState: NetworkSendState,
     scrollState: androidx.compose.foundation.ScrollState,
     onUrlChange: (String) -> Unit,
     onSelectMethod: (HttpMethod) -> Unit,
+    onQueryChange: (String) -> Unit,
+    onHeadersChange: (String) -> Unit,
+    onBodyChange: (String) -> Unit,
+    onAuthChange: (String) -> Unit,
+    onFollowRedirects: (Boolean) -> Unit,
+    onSslVerify: (Boolean) -> Unit,
+    onTimeoutChange: (String) -> Unit,
     onSend: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
     val sending = sendState is NetworkSendState.Sending
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var queryMode by rememberSaveable { mutableStateOf(JsonViewMode.JSON.name) }
+    var headersMode by rememberSaveable { mutableStateOf(JsonViewMode.JSON.name) }
+    var bodyMode by rememberSaveable { mutableStateOf(JsonViewMode.JSON.name) }
+    var authMode by rememberSaveable { mutableStateOf(JsonViewMode.JSON.name) }
+    var showModeSheet by remember { mutableStateOf(false) }
+    val tab = RequestTab.entries[selectedTab.coerceIn(0, RequestTab.entries.lastIndex)]
+    val viewMode = when (tab) {
+        RequestTab.QUERY -> JsonViewMode.valueOf(queryMode)
+        RequestTab.HEADERS -> JsonViewMode.valueOf(headersMode)
+        RequestTab.BODY -> JsonViewMode.valueOf(bodyMode)
+        RequestTab.AUTHORIZATION -> JsonViewMode.valueOf(authMode)
+        RequestTab.SETTINGS -> null
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
             .imePadding()
-            .padding(horizontal = Spacing.lg)
-            .padding(bottom = 88.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+            .padding(bottom = 88.dp)
     ) {
-        AppTextField(
-            value = url,
-            onValueChange = onUrlChange,
-            label = stringResource(R.string.network_request_url_label),
-            placeholder = stringResource(R.string.network_request_url_hint),
-            singleLine = true,
-            enabled = !sending,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Go
-            ),
-            keyboardActions = KeyboardActions(
-                onGo = {
+        Column(
+            modifier = Modifier.padding(horizontal = Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        ) {
+            AppTextField(
+                value = url,
+                onValueChange = onUrlChange,
+                label = stringResource(R.string.network_request_url_label),
+                placeholder = stringResource(R.string.network_request_url_hint),
+                singleLine = true,
+                enabled = !sending,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Go
+                ),
+                keyboardActions = KeyboardActions(
+                    onGo = {
+                        focusManager.clearFocus()
+                        onSend()
+                    }
+                )
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                HttpMethod.entries.forEach { item ->
+                    val selected = item == method
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onSelectMethod(item) },
+                        enabled = !sending,
+                        label = { Text(item.name) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            containerColor = MaterialTheme.semanticColors.cardSurface,
+                            labelColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = selected,
+                            borderColor = MaterialTheme.semanticColors.subtleBorder,
+                            selectedBorderColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+            }
+
+            Button(
+                onClick = {
                     focusManager.clearFocus()
                     onSend()
+                },
+                enabled = !sending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp),
+                shape = RoundedCornerShape(Radius.mdLarge),
+                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = 0.dp)
+            ) {
+                if (sending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(Spacing.sm))
                 }
-            )
+                Text(stringResource(R.string.network_request_send))
+            }
+
+            if (sendState is NetworkSendState.Failure) {
+                Text(
+                    text = sendState.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        RequestTabBar(
+            selected = selectedTab,
+            onSelect = { selectedTab = it }
         )
 
-        Row(
+        if (viewMode != null) {
+            ViewModeDropdown(
+                label = jsonViewModeLabel(viewMode),
+                onClick = { showModeSheet = true },
+                modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+            )
+        } else {
+            Spacer(Modifier.height(Spacing.sm))
+        }
+
+        Box(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                .padding(horizontal = Spacing.lg)
         ) {
-            HttpMethod.entries.forEach { item ->
-                val selected = item == method
-                FilterChip(
-                    selected = selected,
-                    onClick = { onSelectMethod(item) },
-                    enabled = !sending,
-                    label = { Text(item.name) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        containerColor = MaterialTheme.semanticColors.cardSurface,
-                        labelColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = selected,
-                        borderColor = MaterialTheme.semanticColors.subtleBorder,
-                        selectedBorderColor = MaterialTheme.colorScheme.primary
+            when (tab) {
+                RequestTab.QUERY -> JsonSection(
+                    jsonText = queryJson,
+                    mode = viewMode ?: JsonViewMode.JSON,
+                    editable = !sending,
+                    onJsonChange = onQueryChange,
+                    emptyText = stringResource(R.string.network_request_query_empty)
+                )
+                RequestTab.HEADERS -> JsonSection(
+                    jsonText = headersJson,
+                    mode = viewMode ?: JsonViewMode.JSON,
+                    editable = !sending,
+                    onJsonChange = onHeadersChange,
+                    emptyText = stringResource(R.string.network_request_headers_empty_request)
+                )
+                RequestTab.BODY -> JsonSection(
+                    jsonText = bodyJson,
+                    mode = viewMode ?: JsonViewMode.JSON,
+                    editable = !sending,
+                    onJsonChange = onBodyChange,
+                    emptyText = stringResource(R.string.network_request_body_empty_request)
+                )
+                RequestTab.AUTHORIZATION -> JsonSection(
+                    jsonText = authJson,
+                    mode = viewMode ?: JsonViewMode.JSON,
+                    editable = !sending,
+                    onJsonChange = onAuthChange,
+                    emptyText = stringResource(R.string.network_request_auth_empty)
+                )
+                RequestTab.SETTINGS -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                ) {
+                    RequestSettings(
+                        followRedirects = followRedirects,
+                        sslVerify = sslVerify,
+                        timeoutSeconds = timeoutSeconds,
+                        enabled = !sending,
+                        onFollowRedirects = onFollowRedirects,
+                        onSslVerify = onSslVerify,
+                        onTimeoutChange = onTimeoutChange
                     )
-                )
+                }
             }
         }
+    }
 
-        Button(
-            onClick = {
-                focusManager.clearFocus()
-                onSend()
+    if (showModeSheet && viewMode != null) {
+        JsonViewModeSheet(
+            selected = viewMode,
+            onSelected = { mode ->
+                when (tab) {
+                    RequestTab.QUERY -> queryMode = mode.name
+                    RequestTab.HEADERS -> headersMode = mode.name
+                    RequestTab.BODY -> bodyMode = mode.name
+                    RequestTab.AUTHORIZATION -> authMode = mode.name
+                    RequestTab.SETTINGS -> Unit
+                }
+                showModeSheet = false
             },
-            enabled = !sending,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(40.dp),
-            shape = RoundedCornerShape(Radius.mdLarge),
-            contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = 0.dp)
-        ) {
-            if (sending) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-                Spacer(Modifier.width(Spacing.sm))
-            }
-            Text(stringResource(R.string.network_request_send))
-        }
+            onDismiss = { showModeSheet = false }
+        )
+    }
+}
 
-        if (sendState is NetworkSendState.Failure) {
-            Text(
-                text = sendState.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
+@Composable
+private fun RequestTabBar(
+    selected: Int,
+    onSelect: (Int) -> Unit
+) {
+    val labels = listOf(
+        stringResource(R.string.network_request_tab_query),
+        stringResource(R.string.network_request_tab_headers),
+        stringResource(R.string.network_request_tab_body),
+        stringResource(R.string.network_request_tab_authorization),
+        stringResource(R.string.network_request_tab_settings)
+    )
+    ScrollableTabRow(
+        selectedTabIndex = selected,
+        containerColor = settingsPageBackground(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        edgePadding = Spacing.md,
+        divider = {},
+        indicator = { tabPositions ->
+            if (selected in tabPositions.indices) {
+                TabRowDefaults.SecondaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selected]),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    ) {
+        labels.forEachIndexed { index, label ->
+            Tab(
+                selected = index == selected,
+                onClick = { onSelect(index) },
+                selectedContentColor = MaterialTheme.colorScheme.onSurface,
+                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Medium,
+                    modifier = Modifier.padding(vertical = Spacing.sm)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun JsonSection(
+    jsonText: String,
+    mode: JsonViewMode,
+    editable: Boolean,
+    onJsonChange: (String) -> Unit,
+    emptyText: String
+) {
+    val shape = RoundedCornerShape(Radius.lg)
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        shape = shape,
+        color = MaterialTheme.semanticColors.cardSurface,
+        border = BorderStroke(0.5.dp, MaterialTheme.semanticColors.subtleBorder)
+    ) {
+        when (mode) {
+            JsonViewMode.JSON -> {
+                JsonCodeEditor(
+                    value = jsonText,
+                    onValueChange = if (editable) onJsonChange else null,
+                    readOnly = !editable,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            JsonViewMode.TREE -> {
+                JsonTreeView(
+                    nodes = jsonToTreeNodes(jsonText),
+                    emptyText = emptyText,
+                    invalidText = stringResource(R.string.network_request_json_invalid),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RequestSettings(
+    followRedirects: Boolean,
+    sslVerify: Boolean,
+    timeoutSeconds: Int,
+    enabled: Boolean,
+    onFollowRedirects: (Boolean) -> Unit,
+    onSslVerify: (Boolean) -> Unit,
+    onTimeoutChange: (String) -> Unit
+) {
+    var timeoutText by remember(timeoutSeconds) { mutableStateOf(timeoutSeconds.toString()) }
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+        SettingsGroup {
+            SettingsRow(
+                title = stringResource(R.string.network_request_setting_redirects),
+                subtitle = stringResource(R.string.network_request_setting_redirects_desc),
+                trailing = {
+                    AppSwitch(
+                        checked = followRedirects,
+                        onCheckedChange = if (enabled) onFollowRedirects else null,
+                        enabled = enabled
+                    )
+                }
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = stringResource(R.string.network_request_setting_ssl),
+                subtitle = stringResource(R.string.network_request_setting_ssl_desc),
+                trailing = {
+                    AppSwitch(
+                        checked = sslVerify,
+                        onCheckedChange = if (enabled) onSslVerify else null,
+                        enabled = enabled
+                    )
+                }
             )
         }
+        AppTextField(
+            value = timeoutText,
+            onValueChange = { value ->
+                timeoutText = value.filter { it.isDigit() }.take(3)
+                onTimeoutChange(timeoutText)
+            },
+            label = stringResource(R.string.network_request_setting_timeout),
+            enabled = enabled,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            )
+        )
     }
 }
 
@@ -368,7 +676,7 @@ private fun ResponsePane(
 
         if (viewMode != null) {
             ViewModeDropdown(
-                mode = viewMode,
+                label = responseViewModeLabel(viewMode),
                 onClick = { showModeSheet = true },
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)
             )
@@ -457,7 +765,7 @@ private fun ResponseTabBar(
 
 @Composable
 private fun ViewModeDropdown(
-    mode: ResponseViewMode,
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -470,7 +778,7 @@ private fun ViewModeDropdown(
         horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         Text(
-            text = viewModeLabel(mode),
+            text = label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -522,7 +830,67 @@ private fun ViewModeSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = viewModeLabel(mode),
+                            text = responseViewModeLabel(mode),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isSelected) {
+                            Icon(
+                                imageVector = FeatherIcons.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JsonViewModeSheet(
+    selected: JsonViewMode,
+    onSelected: (JsonViewMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    AdaptiveModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = Spacing.xl)
+        ) {
+            Text(
+                text = stringResource(R.string.network_request_view_mode),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.md)
+            )
+            JsonViewMode.entries.forEach { mode ->
+                val isSelected = mode == selected
+                Surface(
+                    onClick = { onSelected(mode) },
+                    color = androidx.compose.ui.graphics.Color.Transparent
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = jsonViewModeLabel(mode),
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
@@ -544,7 +912,15 @@ private fun ViewModeSheet(
 }
 
 @Composable
-private fun viewModeLabel(mode: ResponseViewMode): String = stringResource(
+private fun jsonViewModeLabel(mode: JsonViewMode): String = stringResource(
+    when (mode) {
+        JsonViewMode.JSON -> R.string.network_request_view_json
+        JsonViewMode.TREE -> R.string.network_request_view_tree
+    }
+)
+
+@Composable
+private fun responseViewModeLabel(mode: ResponseViewMode): String = stringResource(
     when (mode) {
         ResponseViewMode.TABLE -> R.string.network_request_view_table
         ResponseViewMode.JSON -> R.string.network_request_view_json
@@ -577,19 +953,143 @@ private fun ResponseContentBox(
                 if (jsonText.isBlank()) {
                     EmptyBoxText(emptyText)
                 } else {
-                    Text(
-                        text = jsonText,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            lineHeight = 18.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(Spacing.md)
-                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        JsonCodeEditor(
+                            value = jsonText,
+                            onValueChange = null,
+                            readOnly = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp)
+                                .padding(top = 36.dp)
+                        )
+                        CopyJsonButton(
+                            text = jsonText,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(Spacing.xs)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CopyJsonButton(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+    IconButton(
+        onClick = {
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("json", text)))
+                copied = true
+            }
+        },
+        modifier = modifier.size(36.dp)
+    ) {
+        Icon(
+            imageVector = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
+            contentDescription = stringResource(R.string.common_copy),
+            tint = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistorySheet(
+    entries: List<NetworkHistoryEntry>,
+    selectedId: String?,
+    onSelected: (NetworkHistoryEntry) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    val formatter = remember {
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+    }
+    AdaptiveModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(bottom = Spacing.xl)
+        ) {
+            Text(
+                text = stringResource(R.string.network_request_history),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.md)
+            )
+            if (entries.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.network_request_history_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)
+                )
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                    items(entries, key = { it.id }) { entry ->
+                        val selected = entry.id == selectedId
+                        Surface(
+                            onClick = { onSelected(entry) },
+                            color = androidx.compose.ui.graphics.Color.Transparent
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${entry.method}  ${entry.url}",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = formatter.format(Date(entry.createdAt)),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (selected) {
+                                    Icon(
+                                        imageVector = FeatherIcons.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

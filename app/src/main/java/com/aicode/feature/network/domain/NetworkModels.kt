@@ -1,16 +1,28 @@
 package com.aicode.feature.network.domain
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.util.Base64
 
-private val compactJson = Json { ignoreUnknownKeys = true }
-private val prettyJson = Json {
+internal val compactJson = Json { ignoreUnknownKeys = true }
+internal val prettyJson = Json {
     prettyPrint = true
     ignoreUnknownKeys = true
+    encodeDefaults = true
 }
+
+const val DEFAULT_JSON_OBJECT = "{\n  \n}"
+const val DEFAULT_AUTH_JSON = "{\n  \"type\": \"none\"\n}"
+const val DEFAULT_TIMEOUT_SECONDS = 30
+const val MIN_TIMEOUT_SECONDS = 1
+const val MAX_TIMEOUT_SECONDS = 120
 
 data class NetworkHeader(
     val name: String,
@@ -25,6 +37,10 @@ enum class NetworkPane {
     REQUEST, RESPONSE
 }
 
+enum class RequestTab {
+    QUERY, HEADERS, BODY, AUTHORIZATION, SETTINGS
+}
+
 enum class ResponseTab {
     HEADERS, BODY, METRICS
 }
@@ -32,6 +48,22 @@ enum class ResponseTab {
 enum class ResponseViewMode {
     TABLE, JSON
 }
+
+enum class JsonViewMode {
+    JSON, TREE
+}
+
+data class JsonTreeNode(
+    val key: String,
+    val preview: String,
+    val children: List<JsonTreeNode> = emptyList()
+)
+
+data class NetworkClientSettings(
+    val followRedirects: Boolean = true,
+    val sslVerify: Boolean = true,
+    val timeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS
+)
 
 data class NetworkMetrics(
     val requestId: String = "",
@@ -63,6 +95,21 @@ sealed interface NetworkSendState {
     data class Failure(val message: String, val exchange: NetworkExchange? = null) : NetworkSendState
 }
 
+@Serializable
+data class NetworkHistoryEntry(
+    val id: String,
+    val createdAt: Long,
+    val method: String,
+    val url: String,
+    val queryJson: String = DEFAULT_JSON_OBJECT,
+    val headersJson: String = DEFAULT_JSON_OBJECT,
+    val bodyJson: String = DEFAULT_JSON_OBJECT,
+    val authJson: String = DEFAULT_AUTH_JSON,
+    val followRedirects: Boolean = true,
+    val sslVerify: Boolean = true,
+    val timeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS
+)
+
 fun defaultViewMode(tab: ResponseTab): ResponseViewMode? = when (tab) {
     ResponseTab.HEADERS -> ResponseViewMode.TABLE
     ResponseTab.BODY -> ResponseViewMode.JSON
@@ -91,6 +138,20 @@ fun prettyPrintJson(raw: String): String {
     }
 }
 
+fun isBlankJson(raw: String): Boolean {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty() || trimmed == "{}" || trimmed == "[]") return true
+    return try {
+        when (val element = compactJson.parseToJsonElement(trimmed)) {
+            is JsonObject -> element.isEmpty()
+            is JsonArray -> element.isEmpty()
+            else -> false
+        }
+    } catch (_: Exception) {
+        false
+    }
+}
+
 fun headersToJson(headers: List<NetworkHeader>): String {
     val map = linkedMapOf<String, JsonElement>()
     headers.forEach { header ->
@@ -102,6 +163,88 @@ fun headersToJson(headers: List<NetworkHeader>): String {
         }
     }
     return prettyJson.encodeToString(JsonObject.serializer(), JsonObject(map))
+}
+
+fun jsonToHeaders(raw: String): List<NetworkHeader> {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty() || trimmed == "{}") return emptyList()
+    return try {
+        when (val element = compactJson.parseToJsonElement(trimmed)) {
+            is JsonObject -> element.entries.flatMap { (key, value) ->
+                when (value) {
+                    is JsonArray -> value.map { NetworkHeader(key, jsonElementText(it)) }
+                    else -> listOf(NetworkHeader(key, jsonElementText(value)))
+                }
+            }
+            else -> emptyList()
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+fun mergeQueryIntoUrl(url: String, queryJson: String): String {
+    val httpUrl = url.toHttpUrlOrNull() ?: return url
+    val params = jsonToHeaders(queryJson).filter { it.name.isNotBlank() }
+    if (params.isEmpty()) return url
+    val builder = httpUrl.newBuilder()
+    params.forEach { builder.addQueryParameter(it.name, it.value) }
+    return builder.build().toString()
+}
+
+fun authHeaders(authJson: String): List<NetworkHeader> {
+    val trimmed = authJson.trim()
+    if (trimmed.isEmpty() || trimmed == "{}") return emptyList()
+    return try {
+        val obj = compactJson.parseToJsonElement(trimmed) as? JsonObject ?: return emptyList()
+        val type = primitiveContent(obj["type"])?.lowercase().orEmpty()
+        when (type) {
+            "bearer" -> {
+                val token = primitiveContent(obj["token"]) ?: primitiveContent(obj["value"]).orEmpty()
+                if (token.isBlank()) emptyList()
+                else listOf(NetworkHeader("Authorization", "Bearer $token"))
+            }
+            "basic" -> {
+                val user = primitiveContent(obj["username"]) ?: primitiveContent(obj["user"]).orEmpty()
+                val password = primitiveContent(obj["password"]).orEmpty()
+                if (user.isBlank() && password.isBlank()) emptyList()
+                else {
+                    val token = Base64.getEncoder().encodeToString(
+                        "$user:$password".toByteArray(Charsets.UTF_8)
+                    )
+                    listOf(NetworkHeader("Authorization", "Basic $token"))
+                }
+            }
+            "apikey", "api_key", "api-key" -> {
+                val name = primitiveContent(obj["key"])
+                    ?: primitiveContent(obj["name"])
+                    ?: "X-Api-Key"
+                val value = primitiveContent(obj["value"]) ?: primitiveContent(obj["token"]).orEmpty()
+                if (value.isBlank()) emptyList() else listOf(NetworkHeader(name, value))
+            }
+            else -> emptyList()
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+fun parseTimeoutSeconds(raw: String): Int =
+    raw.trim().toIntOrNull()?.coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS)
+        ?: DEFAULT_TIMEOUT_SECONDS
+
+fun jsonToTreeNodes(raw: String): List<JsonTreeNode>? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return emptyList()
+    return try {
+        when (val element = compactJson.parseToJsonElement(trimmed)) {
+            is JsonObject -> element.entries.map { (key, value) -> jsonElementToNode(key, value) }
+            is JsonArray -> element.mapIndexed { index, value -> jsonElementToNode("[$index]", value) }
+            else -> listOf(jsonElementToNode("value", element))
+        }
+    } catch (_: Exception) {
+        null
+    }
 }
 
 fun bodyToTableRows(body: String): List<NetworkHeader> {
@@ -122,7 +265,34 @@ fun bodyToTableRows(body: String): List<NetworkHeader> {
     }
 }
 
+fun methodHasBody(method: HttpMethod): Boolean =
+    method == HttpMethod.POST || method == HttpMethod.PUT || method == HttpMethod.PATCH
+
+private fun jsonElementToNode(key: String, value: JsonElement): JsonTreeNode = when (value) {
+    is JsonObject -> JsonTreeNode(
+        key = key,
+        preview = if (value.isEmpty()) "{}" else "{${value.size}}",
+        children = value.entries.map { (childKey, child) -> jsonElementToNode(childKey, child) }
+    )
+    is JsonArray -> JsonTreeNode(
+        key = key,
+        preview = if (value.isEmpty()) "[]" else "[${value.size}]",
+        children = value.mapIndexed { index, child -> jsonElementToNode("[$index]", child) }
+    )
+    JsonNull -> JsonTreeNode(key = key, preview = "null")
+    is JsonPrimitive -> JsonTreeNode(key = key, preview = jsonPrimitivePreview(value))
+}
+
+private fun jsonPrimitivePreview(value: JsonPrimitive): String = when {
+    value.isString -> "\"${value.content}\""
+    else -> value.content
+}
+
 private fun jsonElementText(value: JsonElement): String = when (value) {
     is JsonPrimitive -> value.content
+    JsonNull -> "null"
     else -> prettyJson.encodeToString(JsonElement.serializer(), value)
 }
+
+private fun primitiveContent(element: JsonElement?): String? =
+    (element as? JsonPrimitive)?.contentOrNull ?: (element as? JsonPrimitive)?.content

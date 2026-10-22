@@ -75,4 +75,67 @@ class NetworkModelsTest {
         assertEquals(ResponseViewMode.JSON, defaultViewMode(ResponseTab.BODY))
         assertNull(defaultViewMode(ResponseTab.METRICS))
     }
+
+    @Test
+    fun jsonToHeaders_readsObjectAndArrays() {
+        val rows = jsonToHeaders("""{"Accept":"text/html","X-Test":["a","b"]}""")
+        assertEquals(
+            listOf(
+                NetworkHeader("Accept", "text/html"),
+                NetworkHeader("X-Test", "a"),
+                NetworkHeader("X-Test", "b")
+            ),
+            rows
+        )
+    }
+
+    @Test
+    fun mergeQueryIntoUrl_appendsParameters() {
+        val merged = mergeQueryIntoUrl(
+            "https://example.com/path",
+            """{"q":"hello","page":"2"}"""
+        )
+        assertTrue(merged.contains("q=hello"))
+        assertTrue(merged.contains("page=2"))
+    }
+
+    @Test
+    fun authHeaders_buildsBearerAndBasic() {
+        val bearer = authHeaders("""{"type":"bearer","token":"abc"}""")
+        assertEquals(listOf(NetworkHeader("Authorization", "Bearer abc")), bearer)
+
+        val basic = authHeaders("""{"type":"basic","username":"u","password":"p"}""")
+        assertEquals(1, basic.size)
+        assertEquals("Authorization", basic[0].name)
+        assertTrue(basic[0].value.startsWith("Basic "))
+    }
+
+    @Test
+    fun jsonToTreeNodes_buildsSlimTree() {
+        val nodes = jsonToTreeNodes("""{"user":{"id":1},"tags":["a"]}""")
+        assertEquals(listOf("user", "tags"), nodes?.map { it.key })
+        assertEquals("{1}", nodes?.first { it.key == "user" }?.preview)
+        assertEquals("[1]", nodes?.first { it.key == "tags" }?.preview)
+    }
+
+    @Test
+    fun jsonToTreeNodes_returnsNullForInvalidJson() {
+        assertNull(jsonToTreeNodes("not json"))
+    }
+
+    @Test
+    fun parseTimeoutSeconds_clampsRange() {
+        assertEquals(30, parseTimeoutSeconds(""))
+        assertEquals(1, parseTimeoutSeconds("0"))
+        assertEquals(120, parseTimeoutSeconds("999"))
+        assertEquals(15, parseTimeoutSeconds("15"))
+    }
+
+    @Test
+    fun isBlankJson_treatsEmptyObjectAsBlank() {
+        assertTrue(isBlankJson(DEFAULT_JSON_OBJECT))
+        assertTrue(isBlankJson("{}"))
+        assertTrue(isBlankJson("[]"))
+        assertTrue(!isBlankJson("""{"q":"1"}"""))
+    }
 }

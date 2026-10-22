@@ -10,6 +10,7 @@ import com.aicode.feature.agent.domain.container.ContainerInstaller
 import com.aicode.feature.agent.domain.container.ContainerProfile
 import com.aicode.feature.agent.domain.tool.ToolOutputStore
 import com.aicode.feature.agent.domain.tool.file.VisionSessionStore
+import com.aicode.feature.network.domain.NetworkHistoryStore
 import com.aicode.feature.settings.data.repository.ContainerSettingsRepository
 import com.aicode.feature.settings.domain.model.CleanupKind
 import com.aicode.feature.settings.domain.model.DeviceSpace
@@ -50,6 +51,7 @@ class StorageUsageScanner @Inject constructor(
     private val containerSettingsRepository: ContainerSettingsRepository,
     private val toolOutputStore: ToolOutputStore,
     private val visionSessionStore: VisionSessionStore,
+    private val networkHistoryStore: NetworkHistoryStore,
     private val agentMessageDao: AgentMessageDao
 ) {
 
@@ -89,6 +91,7 @@ class StorageUsageScanner @Inject constructor(
             CleanupKind.Logs -> FileLogger.clearLogs() + AILogger.clearLogs()
             CleanupKind.ToolOutput -> clearDirContents(toolOutputStore.outputDir)
             CleanupKind.VisionSessions -> clearDirContents(visionSessionStore.sessionDir)
+            CleanupKind.NetworkHistory -> networkHistoryStore.deleteAll()
         }
     }
 
@@ -188,7 +191,8 @@ class StorageUsageScanner @Inject constructor(
         val root = containerInstaller.aicodeDir
         val cleanableKeys = mapOf(
             toolOutputStore.outputDir.name to StorageDetailKey.TOOL_OUTPUT,
-            visionSessionStore.sessionDir.name to StorageDetailKey.VISION_SESSIONS
+            visionSessionStore.sessionDir.name to StorageDetailKey.VISION_SESSIONS,
+            networkHistoryStore.historyDir.name to StorageDetailKey.NETWORK_HISTORY
         )
         val details = root.listFiles { f: File -> f.isDirectory }
             ?.map {
