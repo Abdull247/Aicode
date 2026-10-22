@@ -68,18 +68,18 @@ fun JsonCodeEditor(
         ready = true
     }
 
-    if (!ready) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-        }
-        return
-    }
-
     val changeHandler = remember {
         Handler(Looper.getMainLooper())
     }
     DisposableEffect(Unit) {
         onDispose { changeHandler.removeCallbacksAndMessages(null) }
+    }
+
+    if (!ready) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        }
+        return
     }
 
     AndroidView(
@@ -131,6 +131,7 @@ fun JsonCodeEditor(
         },
         onRelease = {
             changeHandler.removeCallbacksAndMessages(null)
+            it.clearFocus()
             editor = null
             it.release()
         }

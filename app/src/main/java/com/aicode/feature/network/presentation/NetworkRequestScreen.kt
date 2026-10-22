@@ -2,6 +2,7 @@ package com.aicode.feature.network.presentation
 
 import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -41,11 +42,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -63,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
@@ -477,7 +475,14 @@ private fun RequestPane(
             }
         }
 
-        RequestTabBar(
+        NetworkScrollableTabs(
+            labels = listOf(
+                stringResource(R.string.network_request_tab_query),
+                stringResource(R.string.network_request_tab_headers),
+                stringResource(R.string.network_request_tab_body),
+                stringResource(R.string.network_request_tab_authorization),
+                stringResource(R.string.network_request_tab_settings)
+            ),
             selected = selectedTab,
             onSelect = { selectedTab = it }
         )
@@ -497,36 +502,8 @@ private fun RequestPane(
                 .fillMaxWidth()
                 .padding(horizontal = Spacing.lg)
         ) {
-            when (tab) {
-                RequestTab.QUERY -> JsonSection(
-                    jsonText = queryJson,
-                    mode = viewMode ?: JsonViewMode.JSON,
-                    editable = !sending,
-                    onJsonChange = onQueryChange,
-                    emptyText = stringResource(R.string.network_request_query_empty)
-                )
-                RequestTab.HEADERS -> JsonSection(
-                    jsonText = headersJson,
-                    mode = viewMode ?: JsonViewMode.JSON,
-                    editable = !sending,
-                    onJsonChange = onHeadersChange,
-                    emptyText = stringResource(R.string.network_request_headers_empty_request)
-                )
-                RequestTab.BODY -> JsonSection(
-                    jsonText = bodyJson,
-                    mode = viewMode ?: JsonViewMode.JSON,
-                    editable = !sending,
-                    onJsonChange = onBodyChange,
-                    emptyText = stringResource(R.string.network_request_body_empty_request)
-                )
-                RequestTab.AUTHORIZATION -> JsonSection(
-                    jsonText = authJson,
-                    mode = viewMode ?: JsonViewMode.JSON,
-                    editable = !sending,
-                    onJsonChange = onAuthChange,
-                    emptyText = stringResource(R.string.network_request_auth_empty)
-                )
-                RequestTab.SETTINGS -> RequestSettings(
+            if (tab == RequestTab.SETTINGS) {
+                RequestSettings(
                     followRedirects = followRedirects,
                     sslVerify = sslVerify,
                     timeoutSeconds = timeoutSeconds,
@@ -534,6 +511,32 @@ private fun RequestPane(
                     onFollowRedirects = onFollowRedirects,
                     onSslVerify = onSslVerify,
                     onTimeoutChange = onTimeoutChange
+                )
+            } else {
+                val jsonText = when (tab) {
+                    RequestTab.QUERY -> queryJson
+                    RequestTab.HEADERS -> headersJson
+                    RequestTab.BODY -> bodyJson
+                    else -> authJson
+                }
+                val onJsonChange = when (tab) {
+                    RequestTab.QUERY -> onQueryChange
+                    RequestTab.HEADERS -> onHeadersChange
+                    RequestTab.BODY -> onBodyChange
+                    else -> onAuthChange
+                }
+                val emptyText = when (tab) {
+                    RequestTab.QUERY -> stringResource(R.string.network_request_query_empty)
+                    RequestTab.HEADERS -> stringResource(R.string.network_request_headers_empty_request)
+                    RequestTab.BODY -> stringResource(R.string.network_request_body_empty_request)
+                    else -> stringResource(R.string.network_request_auth_empty)
+                }
+                JsonSection(
+                    jsonText = jsonText,
+                    mode = viewMode ?: JsonViewMode.JSON,
+                    editable = !sending,
+                    onJsonChange = onJsonChange,
+                    emptyText = emptyText
                 )
             }
         }
@@ -558,45 +561,50 @@ private fun RequestPane(
 }
 
 @Composable
-private fun RequestTabBar(
+private fun NetworkScrollableTabs(
+    labels: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit
 ) {
-    val labels = listOf(
-        stringResource(R.string.network_request_tab_query),
-        stringResource(R.string.network_request_tab_headers),
-        stringResource(R.string.network_request_tab_body),
-        stringResource(R.string.network_request_tab_authorization),
-        stringResource(R.string.network_request_tab_settings)
-    )
-    ScrollableTabRow(
-        selectedTabIndex = selected,
-        containerColor = settingsPageBackground(),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        edgePadding = Spacing.md,
-        divider = {},
-        indicator = { tabPositions ->
-            if (selected in tabPositions.indices) {
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selected]),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    ) {
-        labels.forEachIndexed { index, label ->
-            Tab(
-                selected = index == selected,
-                onClick = { onSelect(index) },
-                selectedContentColor = MaterialTheme.colorScheme.onSurface,
-                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Medium,
-                    modifier = Modifier.padding(vertical = Spacing.sm)
-                )
+    val scroll = rememberScrollState()
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scroll)
+                .padding(horizontal = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            labels.forEachIndexed { index, label ->
+                val selectedTab = index == selected
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .clickable { onSelect(index) }
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selectedTab) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (selectedTab) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Spacer(Modifier.height(Spacing.xs))
+                    Box(
+                        modifier = Modifier
+                            .height(2.dp)
+                            .width(24.dp)
+                            .background(
+                                color = if (selectedTab) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                shape = RoundedCornerShape(1.dp)
+                            )
+                    )
+                }
             }
         }
     }
@@ -752,9 +760,13 @@ private fun ResponsePane(
             .then(if (fillBodyJson) Modifier else Modifier.verticalScroll(scrollState))
             .padding(bottom = if (fillBodyJson) 0.dp else 88.dp)
     ) {
-        ResponseTabBar(
+        NetworkScrollableTabs(
+            labels = listOf(
+                stringResource(R.string.network_request_headers_count, exchange.headers.size),
+                stringResource(R.string.network_request_tab_body),
+                stringResource(R.string.network_request_tab_metrics)
+            ),
             selected = selectedTab,
-            headerCount = exchange.headers.size,
             onSelect = { selectedTab = it }
         )
 
@@ -822,49 +834,7 @@ private fun ResponsePane(
     }
 }
 
-@Composable
-private fun ResponseTabBar(
-    selected: Int,
-    headerCount: Int,
-    onSelect: (Int) -> Unit
-) {
-    val labels = listOf(
-        stringResource(R.string.network_request_headers_count, headerCount),
-        stringResource(R.string.network_request_tab_body),
-        stringResource(R.string.network_request_tab_metrics)
-    )
-    ScrollableTabRow(
-        selectedTabIndex = selected,
-        containerColor = settingsPageBackground(),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        edgePadding = Spacing.md,
-        divider = {},
-        indicator = { tabPositions ->
-            if (selected in tabPositions.indices) {
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selected]),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    ) {
-        labels.forEachIndexed { index, label ->
-            Tab(
-                selected = index == selected,
-                onClick = { onSelect(index) },
-                selectedContentColor = MaterialTheme.colorScheme.onSurface,
-                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Medium,
-                    modifier = Modifier.padding(vertical = Spacing.sm)
-                )
-            }
-        }
-    }
-}
+
 
 @Composable
 private fun ViewModeDropdown(
