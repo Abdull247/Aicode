@@ -1,6 +1,6 @@
 package com.aicode.feature.network.domain
 
-import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class ParsedCurl(
     val method: HttpMethod = HttpMethod.GET,
@@ -297,11 +297,15 @@ private fun looksLikeUrl(token: String): Boolean {
 }
 
 private fun splitUrlAndQuery(raw: String): Pair<String, List<NetworkHeader>> {
-    val url = HttpUrl.parse(raw.trim().isNotEmpty() ? raw.trim() : "http://example.com")
-    if (url == null) return raw.trim() to emptyList()
-    val query = url.queryParameterNames().asSequence()
-        .flatMap { name -> url.queryParameterValues(name).map { NetworkHeader(name, it) } }
-    val stripped = "${url.scheme()}://${url.host()}${url.path() ?? ""}"
+    val httpUrl = raw.trim().toHttpUrlOrNull()
+        ?: normalizeRequestUrl(raw).toHttpUrlOrNull()
+    if (httpUrl == null) return raw.trim() to emptyList()
+    val query = httpUrl.queryParameterNames.flatMap { name ->
+        httpUrl.queryParameterValues(name).map { value ->
+            NetworkHeader(name, value.orEmpty())
+        }
+    }
+    val stripped = httpUrl.newBuilder().query(null).build().toString()
     return stripped to query
 }
 
