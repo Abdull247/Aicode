@@ -10,7 +10,7 @@ import org.junit.Test
 class SkillRelevanceMatcherTest {
 
     private fun skill(name: String, description: String) =
-        Skill(name = name, description = description, instructions = "正文")
+        Skill(name = name, description = description, instructions = "body")
 
     private val rootSkills = listOf(
         skill("root-toolkit", "以 root 身份执行命令、刷机与救砖的专用流程"),
@@ -22,9 +22,9 @@ class SkillRelevanceMatcherTest {
         val hint = SkillRelevanceMatcher.buildHint(rootSkills, "手机变砖了，帮我救砖，需要 root")
         assertNotNull(hint)
         assertTrue(hint!!.contains("root-toolkit"))
-        assertFalse("不相关的技能不应出现", hint.contains("pdf-report"))
+        assertFalse("unrelated skill should not appear", hint.contains("pdf-report"))
         assertTrue(hint.contains("loadSkill"))
-        assertTrue(hint.contains("忽略本段"))
+        assertTrue(hint.contains("ignore this block"))
     }
 
     @Test
@@ -34,7 +34,7 @@ class SkillRelevanceMatcherTest {
 
     @Test
     fun slashCommandInput_returnsNull() {
-        // `/技能名` 触发的技能正文已作为该轮指令注入，无需再提醒 loadSkill。
+        // A `/skill-name` slash command already injects the skill body this turn; no loadSkill hint.
         assertNull(SkillRelevanceMatcher.buildHint(rootSkills, "/root-toolkit 救砖"))
     }
 
@@ -59,14 +59,14 @@ class SkillRelevanceMatcherTest {
         val hint = SkillRelevanceMatcher.buildHint(skills, "救砖 刷机")
         assertNotNull(hint)
         val line = hint!!.lines().first { it.startsWith("- verbose") }
-        // 行 = "- verbose: "（11 字符）+ 描述截断到 120 字符 + 省略号
-        assertTrue("长描述应截断: ${line.length}", line.length <= 132)
+        // Line = "- verbose: " (11 chars) + description truncated to 120 chars + ellipsis
+        assertTrue("long description should truncate: ${line.length}", line.length <= 132)
         assertTrue(line.endsWith("…"))
     }
 
     @Test
     fun singleDescriptionHit_isNotEnough() {
-        // 只撞一个描述二元组（如「文件」这种高频词）达不到 MIN_SCORE，不提醒。
+        // A single description bigram (e.g. a high-frequency word like "文件") is below MIN_SCORE.
         val skills = listOf(skill("file-ops", "读写文件与目录的通用流程"))
         assertNull(SkillRelevanceMatcher.buildHint(skills, "看看这个文件"))
     }

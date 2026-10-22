@@ -7,8 +7,8 @@ import org.junit.Test
 
 class SkillListFormatterTest {
 
-    private fun skill(name: String, description: String = "描述") =
-        Skill(name = name, description = description, instructions = "正文")
+    private fun skill(name: String, description: String = "desc") =
+        Skill(name = name, description = description, instructions = "body")
 
     @Test
     fun emptyList_returnsEmptyString() {
@@ -38,26 +38,26 @@ class SkillListFormatterTest {
 
     @Test
     fun budgetExhausted_degradesToNameOnly_thenOmitsWithNotice() {
-        // 40 个等长技能，预算 600：完整条目占不满预算后整体退化为纯名称，再放不下的省略并告知。
+        // 40 equal-length skills, budget 600: full entries fill first, then names-only, then omit + notice.
         val skills = (1..40).map { skill("skill-%02d".format(it), "描".repeat(30)) }
         val budget = 600
         val out = SkillListFormatter.format(skills, charBudget = budget)
 
         val fullLines = out.lines().filter { it.startsWith("- skill-") && it.contains(": ") }
         val nameLines = out.lines().filter { it.startsWith("- skill-") && !it.contains(": ") }
-        assertTrue("完整条目应先占预算", fullLines.isNotEmpty())
-        assertTrue("预算耗尽后应退化为纯名称", nameLines.isNotEmpty())
+        assertTrue("full entries should consume budget first", fullLines.isNotEmpty())
+        assertTrue("should fall back to names-only after budget is exhausted", nameLines.isNotEmpty())
 
         val omitted = skills.size - fullLines.size - nameLines.size
-        assertTrue("应有省略技能", omitted > 0)
+        assertTrue("some skills should be omitted", omitted > 0)
         assertTrue(out.contains("$omitted more skill"))
         assertTrue(out.contains("~/.aicode/skills/"))
         assertTrue(out.contains("loadSkill"))
-        assertTrue("输出长度 ${out.length} 超过预算 $budget", out.length <= budget)
+        assertTrue("output length ${out.length} exceeds budget $budget", out.length <= budget)
 
         val lastFull = out.lines().indexOfLast { it.startsWith("- skill-") && it.contains(": ") }
         val firstName = out.lines().indexOfFirst { it.startsWith("- skill-") && !it.contains(": ") }
-        assertTrue("完整条目必须排在纯名称之前", firstName > lastFull)
+        assertTrue("full entries must come before names-only", firstName > lastFull)
     }
 
     @Test
@@ -66,12 +66,12 @@ class SkillListFormatterTest {
         val out = SkillListFormatter.format(skills, charBudget = 200)
         assertTrue(out.contains("omitted due to prompt budget"))
         assertTrue(out.contains("${skills.size} more skill"))
-        assertTrue("输出长度 ${out.length} 超过预算 200", out.length <= 200)
+        assertTrue("output length ${out.length} exceeds budget 200", out.length <= 200)
     }
 
     @Test
     fun defaultBudget_fitsRealWorldScale() {
-        // 真机实测规模：118 个技能、平均描述约 131 字符，改进前裸清单 15441 字符。
+        // Device-scale: 118 skills, ~131 chars per description; raw list was 15441 chars before this.
         val skills = (1..118).map { skill("builtin-skill-$it", "描".repeat(131)) }
         val out = SkillListFormatter.format(skills)
         assertTrue(out.length <= SkillListFormatter.DEFAULT_CHAR_BUDGET)
