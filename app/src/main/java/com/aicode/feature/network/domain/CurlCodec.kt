@@ -295,15 +295,21 @@ private fun looksLikeUrl(token: String): Boolean {
 }
 
 private fun splitUrlAndQuery(raw: String): Pair<String, List<NetworkHeader>> {
-    val httpUrl = raw.trim().toHttpUrlOrNull()
-        ?: normalizeRequestUrl(raw).toHttpUrlOrNull()
-    if (httpUrl == null) return raw.trim() to emptyList()
-    val query = httpUrl.queryParameterNames.flatMap { name ->
-        httpUrl.queryParameterValues(name).map { value ->
+    val uri = android.net.Uri.parse(raw.trim().isNotEmpty() ? raw.trim() : "about:blank")
+    if (uri == null || uri.scheme == null) return raw.trim() to emptyList()
+    val queryNames = uri.queryParameterNames()
+    val query = queryNames.flatMap { name ->
+        uri.queryParameterValues(name).map { value ->
             NetworkHeader(name, value.orEmpty())
         }
     }
-    val stripped = httpUrl.newBuilder().query(null).build().toString()
+    val stripped = if (uri.scheme != null && uri.authority != null) {
+        val builder = android.net.Uri.newBuilder()
+            .scheme(uri.scheme)
+            .authority(uri.authority)
+            .appendQueryParameter(null, null)
+        builder.build().toString()
+    } else raw.trim()
     return stripped to query
 }
 
