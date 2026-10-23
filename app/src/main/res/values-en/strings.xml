@@ -576,7 +576,6 @@
     <string name="editor_dont_save">Don\'t save</string>
     <string name="editor_open_files_drawer">Open project files drawer</string>
     <string name="editor_project_files_tree">Project Files tree</string>
-    <string name="editor_close_tab">Close tab</string>
     <string name="editor_md_preview">Preview Markdown</string>
     <string name="editor_md_show_source">Show source</string>
     <string name="editor_indent">Indent</string>

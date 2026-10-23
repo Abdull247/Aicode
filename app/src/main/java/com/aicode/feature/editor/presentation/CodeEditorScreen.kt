@@ -80,7 +80,6 @@ import com.aicode.core.ui.drawerWidth
 import com.aicode.feature.editor.data.EditorSettings
 import com.aicode.feature.editor.domain.TextMateSetup
 import com.aicode.feature.editor.presentation.component.EditorFilesDrawer
-import com.aicode.feature.editor.presentation.component.EditorTabBar
 import com.aicode.feature.editor.presentation.component.MarkdownPreviewWebView
 import com.aicode.feature.settings.presentation.component.settingsPageBackground
 import compose.icons.FeatherIcons
@@ -105,9 +104,10 @@ import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 /**
- * Full-screen code editor with syntax highlight, undo/redo, a symbol bar, save,
- * a standard navigation drawer for the project file tree, and multi-file tabs.
- * Save overwrites in place; there is no external concurrent-write check.
+ * Full-screen code editor with syntax highlight, undo/redo, a symbol bar, save and a standard
+ * navigation drawer for the project file tree. Picking a file in the drawer swaps the content
+ * directly — there is no tab bar. Save overwrites in place; there is no external
+ * concurrent-write check.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,14 +117,9 @@ fun CodeEditorScreen(
     initialLine: Int = 0,
     embedded: Boolean = false,
     fileTreeHost: EditorFileTreeHost? = null,
-    viewModel: CodeEditorViewModel = hiltViewModel(),
-    tabsViewModel: OpenedEditorsViewModel = hiltViewModel()
+    viewModel: CodeEditorViewModel = hiltViewModel()
 ) {
-    val tabsState by tabsViewModel.state.collectAsStateWithLifecycle()
-    val activePath = tabsState.activePath?.takeIf { it.isNotBlank() } ?: path
-    LaunchedEffect(path, initialLine) {
-        if (path.isNotBlank()) tabsViewModel.ensureOpen(path, initialLine)
-    }
+    val activePath = path
     LaunchedEffect(activePath) { viewModel.load(activePath) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dirtyPaths by viewModel.dirtyPaths.collectAsStateWithLifecycle()
@@ -132,7 +127,7 @@ fun CodeEditorScreen(
     val editorRef = remember { mutableStateOf<CodeEditor?>(null) }
     // Document the editor in [editorRef] currently belongs to. Set by the surface factory,
     // cleared on release; save/snapshot code must not assume it matches [activePath] — while a
-    // tab switch is settling, the view may still be the previous document's.
+    // document switch is settling, the view may still be the previous document's.
     val boundPath = remember { mutableStateOf<String?>(null) }
     var canUndo by remember { mutableStateOf(false) }
     var canRedo by remember { mutableStateOf(false) }
@@ -140,7 +135,6 @@ fun CodeEditorScreen(
     val baselineText = remember { mutableStateOf("") }
     var pendingSaveText by remember { mutableStateOf("") }
     var pendingExit by remember { mutableStateOf(false) }
-    var pendingClosePath by remember { mutableStateOf<String?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var previewMode by remember { mutableStateOf(false) }
@@ -154,8 +148,7 @@ fun CodeEditorScreen(
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val restoredTab = tabsState.tabs.firstOrNull { it.path == activePath }
-    // Chat deep-link jump target. Latched per (path, line) so switching tabs never replays it.
+    // Chat deep-link jump target. Latched per (path, line) so re-navigation never replays it.
     var jumpLine by remember { mutableIntStateOf(0) }
     var lastJumpArgs by remember { mutableStateOf<Pair<String, Int>?>(null) }
 
@@ -165,8 +158,8 @@ fun CodeEditorScreen(
         dirty = activePath in dirtyPaths
         pendingExit = false
         jumpLine = 0
-        cursorLine = (restoredTab?.cursorLine ?: 1).coerceAtLeast(1)
-        cursorColumn = (restoredTab?.cursorColumn ?: 1).coerceAtLeast(1)
+        cursorLine = 1
+        cursorColumn = 1
         previewMode = false
     }
 
@@ -184,25 +177,16 @@ fun CodeEditorScreen(
         viewModel.saveEvents.collect { result ->
             when (result) {
                 is SaveResult.Success -> {
-                    val closing = pendingClosePath
-                    // Saving a non-active tab's draft must not touch the active document baseline.
-                    if (pendingExit || closing == null || closing == activePath) {
-                        baselineText.value = pendingSaveText
-                        dirty = false
-                    }
+                    baselineText.value = pendingSaveText
+                    dirty = false
                     Toast.makeText(context, savedText, Toast.LENGTH_SHORT).show()
                     if (pendingExit) {
                         pendingExit = false
-                        pendingClosePath = null
                         onBack()
-                    } else if (closing != null) {
-                        pendingClosePath = null
-                        finishCloseTab(closing, editorRef, viewModel, tabsViewModel, onBack)
                     }
                 }
                 is SaveResult.Error -> {
                     pendingExit = false
-                    pendingClosePath = null
                     Toast.makeText(
                         context,
                         result.detail ?: saveFailedText,
@@ -215,19 +199,11 @@ fun CodeEditorScreen(
 
     fun snapshotActive() {
         val editor = editorRef.value ?: return
-        // Route by the editor's own document, never by activePath: at dispose time after a tab
-        // switch the dying view may outlive the activePath change, and guessing the path would
-        // write one tab's text into the other's draft.
+        // Route by the editor's own document, never by activePath: at dispose time after a
+        // document switch the dying view may outlive the activePath change, and guessing the
+        // path would write one document's text into the other's draft.
         val path = boundPath.value ?: return
-        val text = editor.text.toString()
-        viewModel.captureDraft(path, text)
-        tabsViewModel.updateViewState(
-            path = path,
-            line = editor.cursor.leftLine + 1,
-            column = editor.cursor.leftColumn + 1,
-            scrollX = editor.offsetX,
-            scrollY = editor.offsetY
-        )
+        viewModel.captureDraft(path, editor.text.toString())
     }
 
     fun requestSave() {
@@ -250,21 +226,8 @@ fun CodeEditorScreen(
     fun handleBack() {
         snapshotActive()
         if (dirty) {
-            pendingClosePath = null
             showUnsavedDialog = true
         } else onBack()
-    }
-
-    fun requestCloseTab(tabPath: String) {
-        snapshotActive()
-        val tabDirty = tabPath in dirtyPaths || (tabPath == activePath && dirty)
-        if (tabDirty) {
-            pendingClosePath = tabPath
-            pendingExit = false
-            showUnsavedDialog = true
-        } else {
-            finishCloseTab(tabPath, editorRef, viewModel, tabsViewModel, onBack)
-        }
     }
 
     BackHandler(enabled = drawerState.isOpen) {
@@ -291,16 +254,11 @@ fun CodeEditorScreen(
                     selectedPath = activePath,
                     onToggleExpand = fileTreeHost.onToggleExpand,
                     onOpenFile = { filePath ->
-                        if (tabsState.tabs.any { it.path == filePath }) {
-                            // Already open: switch tabs in place so in-memory drafts and buffers
-                            // stay alive; no navigation meant for bootstrapping is needed.
-                            snapshotActive()
-                            tabsViewModel.activate(filePath)
-                        } else {
-                            // New file: hand it to the host, which opens it as a fresh tab.
-                            snapshotActive()
-                            fileTreeHost.onOpenFile(filePath)
-                        }
+                        // The picked file simply replaces the current content. The buffer cache
+                        // in the view model re-serves the unsaved draft when returning to a
+                        // previously opened file in this session.
+                        snapshotActive()
+                        fileTreeHost.onOpenFile(filePath)
                         scope.launch { drawerState.close() }
                     },
                     onRefreshBrowse = fileTreeHost.onRefreshBrowse,
@@ -436,18 +394,6 @@ fun CodeEditorScreen(
                         }
                     )
                     HorizontalDivider(thickness = 0.5.dp)
-                    EditorTabBar(
-                        tabs = tabsState.tabs,
-                        activePath = activePath,
-                        dirtyPaths = dirtyPaths + if (dirty) setOf(activePath) else emptySet(),
-                        onSelect = { tabPath ->
-                            if (tabPath == activePath) return@EditorTabBar
-                            snapshotActive()
-                            tabsViewModel.activate(tabPath)
-                        },
-                        onClose = { requestCloseTab(it) }
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
                     FileTitleBar(
                         fileName = activePath.substringAfterLast('/'),
                         dirty = dirty,
@@ -488,24 +434,17 @@ fun CodeEditorScreen(
                             settings = settings,
                             baselineText = baselineText,
                             initialLine = jumpLine,
-                            restoreLine = restoredTab?.cursorLine ?: 1,
-                            initialColumn = restoredTab?.cursorColumn ?: 1,
-                            initialScrollX = restoredTab?.scrollX ?: 0,
-                            initialScrollY = restoredTab?.scrollY ?: 0,
                             onBackgroundResolved = { editorBackground = it },
                             onCursorChanged = { l, c ->
                                 cursorLine = l
                                 cursorColumn = c
                             },
-                            onScrollChanged = { x, y ->
-                                tabsViewModel.updateViewState(activePath, cursorLine, cursorColumn, x, y)
-                            },
                             onContentChanged = { undo, redo, changed ->
                                 canUndo = undo
                                 canRedo = redo
                                 dirty = changed
-                                // O(1) dirty flag only; stringify/copy happens once at tab switch
-                                // or dispose (snapshotActive), never per keystroke.
+                                // O(1) dirty flag only; stringify/copy happens once at document
+                                // switch or dispose (snapshotActive), never per keystroke.
                                 viewModel.markDirty(activePath, changed)
                             },
                             onSnapshot = { snapshotActive() }
@@ -554,38 +493,14 @@ fun CodeEditorScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         showUnsavedDialog = false
-                        val closing = pendingClosePath
-                        if (closing == null) {
-                            pendingExit = true
-                            requestSave()
-                        } else if (closing == activePath) {
-                            pendingExit = false
-                            requestSave()
-                        } else {
-                            // Closing a dirty non-active tab: save its remembered draft, not the
-                            // active editor content. With no buffer left there is nothing to
-                            // save — close the tab, never write an empty file over it.
-                            val draft = viewModel.draftOf(closing)
-                            if (draft != null) {
-                                viewModel.save(draft, closing)
-                            } else {
-                                pendingClosePath = null
-                                finishCloseTab(closing, editorRef, viewModel, tabsViewModel, onBack)
-                            }
-                        }
+                        pendingExit = true
+                        requestSave()
                     }) { Text(stringResource(R.string.editor_save_and_exit)) }
                 },
                 dismissButton = {
                     TextButton(onClick = {
                         showUnsavedDialog = false
-                        val closing = pendingClosePath
-                        pendingClosePath = null
-                        if (closing != null) {
-                            viewModel.dropBuffer(closing)
-                            finishCloseTab(closing, editorRef, viewModel, tabsViewModel, onBack)
-                        } else {
-                            onBack()
-                        }
+                        onBack()
                     }) { Text(stringResource(R.string.editor_dont_save)) }
                 }
             )
@@ -637,20 +552,7 @@ fun CodeEditorScreen(
     }
 }
 
-private fun finishCloseTab(
-    tabPath: String,
-    editorRef: MutableState<CodeEditor?>,
-    viewModel: CodeEditorViewModel,
-    tabsViewModel: OpenedEditorsViewModel,
-    onBack: () -> Unit
-) {
-    viewModel.dropBuffer(tabPath)
-    tabsViewModel.close(tabPath) { next ->
-        if (next == null) onBack()
-    }
-}
-
-/** Slim bar under the tabs: file name (star when dirty), line:column, encoding. */
+/** Slim bar under the top app bar: file name (star when dirty), line:column, encoding. */
 @Composable
 private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: Int) {
     Row(
@@ -696,9 +598,9 @@ private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: In
 /**
  * One editor document surface.
  *
- * [initialLine] is a chat deep-link target (center-jump, 1-based); [restoreLine]/[initialColumn] +
- * the scroll offsets are the tab snapshot restored exactly when no jump is pending. The factory
- * only runs once per document because the call site keys this composable by the document identity.
+ * [initialLine] is a chat deep-link target (center-jump, 1-based); without it the file simply
+ * opens at the top. The factory only runs once per document because the call site keys this
+ * composable by the document identity.
  */
 @Composable
 private fun EditorSurface(
@@ -710,13 +612,8 @@ private fun EditorSurface(
     settings: EditorSettings,
     baselineText: MutableState<String>,
     initialLine: Int = 0,
-    restoreLine: Int = 1,
-    initialColumn: Int = 1,
-    initialScrollX: Int = 0,
-    initialScrollY: Int = 0,
     onBackgroundResolved: (Color) -> Unit,
     onCursorChanged: (line: Int, column: Int) -> Unit,
-    onScrollChanged: (scrollX: Int, scrollY: Int) -> Unit,
     onContentChanged: (canUndo: Boolean, canRedo: Boolean, dirty: Boolean) -> Unit,
     onSnapshot: () -> Unit
 ) {
@@ -794,8 +691,6 @@ private fun EditorSurface(
                 }
                 subscribeAlways(SelectionChangeEvent::class.java) {
                     onCursorChanged(cursor.leftLine + 1, cursor.leftColumn + 1)
-                    // Keep the tab snapshot fresh for pure cursor moves that do not scroll.
-                    onScrollChanged(editorView.offsetX, editorView.offsetY)
                 }
                 subscribeAlways(ScrollEvent::class.java) { event ->
                     // After size changes sora clamps scroll through touchHandler with the same
@@ -803,13 +698,11 @@ private fun EditorSurface(
                     // burst of those zero-move events; matching cause alone would mistake them
                     // for user scrolls and abandon line positioning.
                     val moved = event.startY != event.endY || event.startX != event.endX
-                    if (moved) {
-                        onScrollChanged(editorView.offsetX, editorView.offsetY)
-                        if (event.cause == ScrollEvent.CAUSE_USER_DRAG ||
-                            event.cause == ScrollEvent.CAUSE_USER_FLING
-                        ) {
-                            scrolledByUser.value = true
-                        }
+                    if (moved &&
+                        (event.cause == ScrollEvent.CAUSE_USER_DRAG ||
+                            event.cause == ScrollEvent.CAUSE_USER_FLING)
+                    ) {
+                        scrolledByUser.value = true
                     }
                 }
                 editorRef.value = this
@@ -855,13 +748,12 @@ private fun EditorSurface(
     // Positioning after the document view is (re)created.
     //
     // initialLine > 0 means a chat deep link: jump to the target line and center it (1-based here,
-    // 0-based inside sora). Otherwise the tab snapshot is restored: exact cursor column and scroll
-    // offsets. The two never mix — a pending jump wins over the snapshot.
+    // 0-based inside sora). Otherwise the file opens at the top, no auto positioning.
     //
-    // Must wait for the first layout: ensurePositionVisible computes scroll from getHeight(), while
-    // onSizeChanged clamps offsets against the new size and word wrap rebuilds the whole layout —
-    // a jump made at zero size is wiped by the first layout pass, so the file would open at the top
-    // instead.
+    // The jump must wait for the first layout: ensurePositionVisible computes scroll from
+    // getHeight(), while onSizeChanged clamps offsets against the new size and word wrap rebuilds
+    // the whole layout — a jump made at zero size is wiped by the first layout pass, so the file
+    // would open at the top instead.
     //
     // Font size and word wrap come from DataStore and usually arrive after the first frame;
     // setTextSize / setWordwrap rebuild the layout as well, hence they are effect keys too. After
@@ -875,10 +767,8 @@ private fun EditorSurface(
         settings.fontSizeSp
     ) {
         val editorView = editor ?: return@LaunchedEffect
-        if (scrolledByUser.value) return@LaunchedEffect
-        val jump = initialLine > 0
-        val targetLine = (if (jump) initialLine else restoreLine).coerceAtLeast(1)
-        val targetColumn = (if (jump) 1 else initialColumn).coerceAtLeast(1)
+        if (scrolledByUser.value || initialLine <= 0) return@LaunchedEffect
+        val targetLine = initialLine.coerceAtLeast(1)
         var frames = 0
         while ((editorView.width == 0 || editorView.height == 0) &&
             frames < LINE_JUMP_LAYOUT_WAIT_FRAMES
@@ -890,24 +780,19 @@ private fun EditorSurface(
             return@LaunchedEffect
         }
         val line = (targetLine - 1).coerceIn(0, (editorView.lineCount - 1).coerceAtLeast(0))
-        val column = (targetColumn - 1).coerceIn(0, editorView.text.getColumnCount(line))
-        // After positioning, verify the target line really settled where expected; retry when a
+        // After jumping, verify the target line really settled where expected; retry when a
         // layout rebuild (late settings, finished syntax parsing, re-wrap) wiped it — a single
         // positioning pass is not enough.
         var attempt = 0
         while (attempt < LINE_JUMP_MAX_ATTEMPTS && !scrolledByUser.value) {
-            editorView.setSelection(line, column)
-            val desired = if (jump) {
-                centerScrollOffset(editorView, line)
-            } else {
-                initialScrollY.coerceIn(0, editorView.scrollMaxY.coerceAtLeast(0))
-            }
+            editorView.setSelection(line, 0)
+            val desired = centerScrollOffset(editorView, line)
             if (desired != null) {
-                scrollToOffset(editorView, initialScrollX, desired)
+                scrollToOffset(editorView, 0, desired)
             } else {
                 // Without layout info, fall back to the official make-visible call; no animation,
                 // so a layout rebuild cannot interrupt it halfway.
-                editorView.ensurePositionVisible(line, column, true)
+                editorView.ensurePositionVisible(line, 0, true)
             }
             repeat(LINE_JUMP_VERIFY_FRAMES) { withFrameNanos { } }
             val settled = if (desired != null) {
@@ -922,7 +807,7 @@ private fun EditorSurface(
             if (settled) break
             attempt++
         }
-        onCursorChanged(line + 1, column + 1)
+        onCursorChanged(line + 1, 1)
     }
     LaunchedEffect(settings.showIndentGuide, editor) {
         editor?.isBlockLineEnabled = settings.showIndentGuide
