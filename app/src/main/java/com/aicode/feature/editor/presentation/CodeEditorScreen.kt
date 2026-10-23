@@ -68,8 +68,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -93,7 +92,6 @@ import compose.icons.feathericons.Settings
 import compose.icons.feathericons.X
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.ScrollEvent
-import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.langs.textmate.TextMateColorScheme
 import io.github.rosemoe.sora.langs.textmate.TextMateLanguage
 import io.github.rosemoe.sora.langs.textmate.registry.ThemeRegistry
@@ -138,8 +136,6 @@ fun CodeEditorScreen(
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var previewMode by remember { mutableStateOf(false) }
-    var cursorLine by remember { mutableStateOf(1) }
-    var cursorColumn by remember { mutableStateOf(1) }
     val isMarkdown = remember(activePath) {
         activePath.substringAfterLast('.', "").lowercase() in setOf("md", "markdown")
     }
@@ -158,8 +154,6 @@ fun CodeEditorScreen(
         dirty = activePath in dirtyPaths
         pendingExit = false
         jumpLine = 0
-        cursorLine = 1
-        cursorColumn = 1
         previewMode = false
     }
 
@@ -394,13 +388,6 @@ fun CodeEditorScreen(
                         }
                     )
                     HorizontalDivider(thickness = 0.5.dp)
-                    FileTitleBar(
-                        fileName = activePath.substringAfterLast('/'),
-                        dirty = dirty,
-                        line = cursorLine,
-                        column = cursorColumn
-                    )
-                    HorizontalDivider()
                 }
             },
             bottomBar = {
@@ -421,8 +408,8 @@ fun CodeEditorScreen(
             when (val s = state) {
                 is EditorUiState.Loading -> CenterBox(content) { CircularProgressIndicator() }
                 is EditorUiState.Success if s.path == activePath -> Box(modifier = content) {
-                    // Recreate the editor view per document (tab switch or reload); switching
-                    // tabs swaps content, so the view keyed by the document identity is rebuilt
+                    // Recreate the editor view per document (switch or reload); picking another
+                    // file swaps content, so the view keyed by the document identity is rebuilt
                     // intentionally. Hash + length keep the per-frame key comparison O(1).
                     key(s.path, s.contentHash, s.content.length) {
                         EditorSurface(
@@ -435,10 +422,6 @@ fun CodeEditorScreen(
                             baselineText = baselineText,
                             initialLine = jumpLine,
                             onBackgroundResolved = { editorBackground = it },
-                            onCursorChanged = { l, c ->
-                                cursorLine = l
-                                cursorColumn = c
-                            },
                             onContentChanged = { undo, redo, changed ->
                                 canUndo = undo
                                 canRedo = redo
@@ -552,49 +535,6 @@ fun CodeEditorScreen(
     }
 }
 
-/** Slim bar under the top app bar: file name (star when dirty), line:column, encoding. */
-@Composable
-private fun FileTitleBar(fileName: String, dirty: Boolean, line: Int, column: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .height(FILE_TITLE_BAR_HEIGHT)
-            .padding(horizontal = FILE_TITLE_HORIZONTAL_PADDING),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (dirty) {
-            Text(
-                text = "*",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(end = 2.dp)
-            )
-        }
-        Text(
-            text = fileName,
-            style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = "$line:$column",
-            style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = Spacing.sm)
-        )
-        Text(
-            text = FILE_ENCODING,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = Spacing.md)
-        )
-    }
-}
-
 /**
  * One editor document surface.
  *
@@ -613,7 +553,6 @@ private fun EditorSurface(
     baselineText: MutableState<String>,
     initialLine: Int = 0,
     onBackgroundResolved: (Color) -> Unit,
-    onCursorChanged: (line: Int, column: Int) -> Unit,
     onContentChanged: (canUndo: Boolean, canRedo: Boolean, dirty: Boolean) -> Unit,
     onSnapshot: () -> Unit
 ) {
@@ -688,9 +627,6 @@ private fun EditorSurface(
                             text.length != baseline.length || text.toString() != baseline
                         )
                     }
-                }
-                subscribeAlways(SelectionChangeEvent::class.java) {
-                    onCursorChanged(cursor.leftLine + 1, cursor.leftColumn + 1)
                 }
                 subscribeAlways(ScrollEvent::class.java) { event ->
                     // After size changes sora clamps scroll through touchHandler with the same
@@ -807,7 +743,6 @@ private fun EditorSurface(
             if (settled) break
             attempt++
         }
-        onCursorChanged(line + 1, 1)
     }
     LaunchedEffect(settings.showIndentGuide, editor) {
         editor?.isBlockLineEnabled = settings.showIndentGuide
@@ -990,13 +925,6 @@ private const val LINE_NUMBER_MARGIN_SP = 2f
 private const val DRAWER_ICON_MORPH_MS = 220
 private const val DRAWER_ICON_FADE_MS = 120
 private const val DRAWER_ICON_ROTATE_ANGLE = 90f
-
-/** Slim file-name bar height and horizontal padding. */
-private val FILE_TITLE_BAR_HEIGHT = 16.dp
-private val FILE_TITLE_HORIZONTAL_PADDING = 12.dp
-
-/** Files are read and written as UTF-8; shown on the right of the slim bar. */
-private const val FILE_ENCODING = "UTF-8"
 
 /**
  * Vertical extra viewport factor (share of editor height, in [0,1]) used for bottom overscroll.
