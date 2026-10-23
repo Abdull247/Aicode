@@ -474,11 +474,11 @@ fun CodeEditorScreen(
                 .padding(padding)
             when (val s = state) {
                 is EditorUiState.Loading -> CenterBox(content) { CircularProgressIndicator() }
-                is EditorUiState.Success -> Box(modifier = content) {
+                is EditorUiState.Success if s.path == activePath -> Box(modifier = content) {
                     // Recreate the editor view per document (tab switch or reload); switching
                     // tabs swaps content, so the view keyed by the document identity is rebuilt
                     // intentionally. Hash + length keep the per-frame key comparison O(1).
-                    key(activePath, s.contentHash, s.content.length) {
+                    key(s.path, s.contentHash, s.content.length) {
                         EditorSurface(
                             state = s,
                             path = activePath,
@@ -525,6 +525,10 @@ fun CodeEditorScreen(
                         )
                     }
                 }
+                // Success for a document that is not the active tab: the new file's read has
+                // not completed yet. Keep the old text off the screen — binding it under the
+                // new path would flash the wrong content and taint the new tab's draft.
+                is EditorUiState.Success -> CenterBox(content) { CircularProgressIndicator() }
                 is EditorUiState.TooLarge -> CenterBox(content) {
                     HintText(
                         stringResource(

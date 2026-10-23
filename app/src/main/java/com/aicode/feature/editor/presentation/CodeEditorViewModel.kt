@@ -29,8 +29,14 @@ sealed interface EditorUiState {
     /**
      * [contentHash] (computed once at load time) gives recomposition keys a cheap document
      * identity: comparing a full [content] string for equality on every frame stalls large files.
+     *
+     * [path] states which document [content] belongs to. The screen must not render a Success
+     * whose [path] differs from the active tab: until the new file's read completes, the state
+     * still describes the previous document, and binding the new path to the old text would both
+     * flash wrong content and let the dispose-time snapshot write it into the new tab's draft.
      */
     data class Success(
+        val path: String,
         val content: String,
         val scopeName: String?,
         val contentHash: Int = content.hashCode()
@@ -86,6 +92,7 @@ class CodeEditorViewModel @Inject constructor(
                 cached.binary -> EditorUiState.Binary
                 cached.error != null -> EditorUiState.Error(cached.error)
                 else -> EditorUiState.Success(
+                    path = path,
                     content = cached.draft ?: cached.diskContent.orEmpty(),
                     scopeName = cached.scopeName
                 )
@@ -121,7 +128,7 @@ class CodeEditorViewModel @Inject constructor(
             }
             buffers[path] = result
             if (loadedPath != path) return@launch
-            _uiState.value = result.toUiState()
+            _uiState.value = result.toUiState(path)
         }
     }
 
@@ -196,13 +203,14 @@ class CodeEditorViewModel @Inject constructor(
         }
     }
 
-    private fun FileBuffer.toUiState(): EditorUiState {
+    private fun FileBuffer.toUiState(path: String): EditorUiState {
         val tooLarge = tooLargeBytes
         return when {
             tooLarge != null -> EditorUiState.TooLarge(tooLarge)
             binary -> EditorUiState.Binary
             error != null || diskContent == null && draft == null -> EditorUiState.Error(error)
             else -> EditorUiState.Success(
+                path = path,
                 content = draft ?: diskContent.orEmpty(),
                 scopeName = scopeName
             )
