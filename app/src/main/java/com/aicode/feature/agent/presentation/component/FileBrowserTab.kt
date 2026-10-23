@@ -3,7 +3,6 @@ package com.aicode.feature.agent.presentation.component
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -99,8 +98,7 @@ fun FileBrowserTab(
     onCutEntry: (String, String) -> Unit,
     onPasteEntry: (String, (Boolean) -> Unit) -> Unit,
     onClearClipboard: () -> Unit,
-    modifier: Modifier = Modifier,
-    selectedPath: String? = null
+    modifier: Modifier = Modifier
 ) {
     var creating by remember { mutableStateOf<CreateTarget?>(null) }
     var menuNode by remember { mutableStateOf<FileTreeNode?>(null) }
@@ -161,7 +159,6 @@ fun FileBrowserTab(
                                 rowWidth = rowWidth,
                                 expanding = node.entry.isDirectory && node.path == expandingPath,
                                 busy = node.path in fileOpPaths,
-                                selected = selectedPath != null && node.path == selectedPath,
                                 onClick = {
                                     if (node.entry.isDirectory) onToggleExpand(node.path)
                                     else onOpenFile(node.path)
@@ -494,7 +491,6 @@ private fun FileTreeRow(
     rowWidth: Dp,
     expanding: Boolean,
     busy: Boolean,
-    selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -520,10 +516,6 @@ private fun FileTreeRow(
         modifier = modifier
             .width(rowWidth)
             .clip(rowShape)
-            .then(
-                if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                else Modifier
-            )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = Spacing.xs + 2.dp)
             .padding(start = Spacing.sm, end = Spacing.md),

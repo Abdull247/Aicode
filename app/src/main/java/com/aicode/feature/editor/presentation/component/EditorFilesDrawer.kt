@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,7 +28,6 @@ fun EditorFilesDrawer(
     expandingPath: String?,
     fileOpPaths: Set<String>,
     clipboard: BrowseClipboard?,
-    selectedPath: String?,
     onToggleExpand: (String) -> Unit,
     onOpenFile: (String) -> Unit,
     onRefreshBrowse: () -> Unit,
@@ -56,14 +54,12 @@ fun EditorFilesDrawer(
                 .fillMaxWidth()
                 .padding(horizontal = Spacing.lg, vertical = Spacing.md)
         )
-        HorizontalDivider()
         FileBrowserTab(
             state = browseState,
             expandedPaths = expandedPaths,
             expandingPath = expandingPath,
             fileOpPaths = fileOpPaths,
             clipboard = clipboard,
-            selectedPath = selectedPath,
             onToggleExpand = onToggleExpand,
             onOpenFile = onOpenFile,
             onRefresh = onRefreshBrowse,

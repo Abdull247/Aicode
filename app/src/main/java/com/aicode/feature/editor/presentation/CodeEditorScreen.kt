@@ -245,7 +245,6 @@ fun CodeEditorScreen(
                     expandingPath = fileTreeHost.expandingPath,
                     fileOpPaths = fileTreeHost.fileOpPaths,
                     clipboard = fileTreeHost.clipboard,
-                    selectedPath = activePath,
                     onToggleExpand = fileTreeHost.onToggleExpand,
                     onOpenFile = { filePath ->
                         // The picked file simply replaces the current content. The buffer cache
