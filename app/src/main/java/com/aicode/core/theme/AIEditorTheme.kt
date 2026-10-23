@@ -295,7 +295,7 @@ private val AppTypography = Typography().run {
 @Composable
 fun AIEditorTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    preset: AppThemePreset = AppThemePreset.DEFAULT,
+    preset: AppThemePreset = AppThemePreset.COFFEE,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
