@@ -157,21 +157,10 @@ class CodeEditorViewModel @Inject constructor(
         _dirtyPaths.value = if (dirty) _dirtyPaths.value + path else _dirtyPaths.value - path
     }
 
-    fun isDirty(path: String): Boolean = path in _dirtyPaths.value
-
     /** Current editable text for [path]: the unsaved draft if any, else the disk content. */
     fun draftOf(path: String): String? {
         val buffer = buffers[path] ?: return null
         return buffer.draft ?: buffer.diskContent
-    }
-
-    fun dropBuffer(path: String) {
-        buffers.remove(path)
-        _dirtyPaths.value = _dirtyPaths.value - path
-        if (loadedPath == path) {
-            loadedPath = null
-            _uiState.value = EditorUiState.Loading
-        }
     }
 
     /** Write the editor contents back to disk. Runs on IO; result via [saveEvents]; [saving] while in flight. */
