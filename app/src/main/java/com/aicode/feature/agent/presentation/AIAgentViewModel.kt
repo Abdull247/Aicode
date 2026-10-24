@@ -3,7 +3,9 @@ package com.aicode.feature.agent.presentation
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.PowerManager
+import android.provider.OpenableColumns
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -66,6 +68,7 @@ import com.aicode.feature.terminal.domain.takeTailLines
 import com.aicode.feature.workspace.domain.DirectoryListingCache
 import com.aicode.feature.workspace.domain.FileAccessProvider
 import com.aicode.feature.workspace.domain.FileEntry
+import com.aicode.feature.workspace.domain.UriPathResolver
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.domain.isValidFileEntryName
 import com.aicode.feature.workspace.domain.planBrowseInvalidation
@@ -118,6 +121,7 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import java.io.OutputStream
 import java.util.Calendar
 import java.util.UUID
@@ -736,6 +740,108 @@ class AIAgentViewModel @Inject constructor(
             fileAccess.deleteRecursively(path)
             true
         }
+
+    /** Copy picked files into [parent]. Existing names get a numeric suffix. */
+    fun importBrowseFiles(
+        parent: String,
+        uris: List<Uri>,
+        resolverContext: Context,
+        onResult: (Boolean) -> Unit
+    ) {
+        if (uris.isEmpty()) {
+            onResult(false)
+            return
+        }
+        mutateBrowse(busyPaths = setOf(parent), onResult = onResult) {
+            var any = false
+            for (uri in uris) {
+                val name = uniqueBrowseName(
+                    parent,
+                    sanitizeBrowseEntryName(uriDisplayName(resolverContext, uri))
+                )
+                if (!isValidFileEntryName(name)) continue
+                val copied = resolverContext.contentResolver.openInputStream(uri)?.use { input ->
+                    fileAccess.writeStream("$parent/$name", input, overwrite = false)
+                    true
+                } ?: false
+                if (copied) any = true
+            }
+            any
+        }
+    }
+
+    /** Copy a device folder into [parent]. Existing names get a numeric suffix. */
+    fun importBrowseFolder(
+        parent: String,
+        treeUri: Uri,
+        resolverContext: Context,
+        onResult: (Boolean) -> Unit
+    ) {
+        mutateBrowse(busyPaths = setOf(parent), onResult = onResult) {
+            val sourcePath = UriPathResolver.toFilePath(resolverContext, treeUri) ?: return@mutateBrowse false
+            val source = File(sourcePath)
+            if (!source.isDirectory) return@mutateBrowse false
+            val destName = uniqueBrowseName(
+                parent,
+                sanitizeBrowseEntryName(source.name.ifBlank { "folder" })
+            )
+            if (!isValidFileEntryName(destName)) return@mutateBrowse false
+            copyLocalTreeIntoBrowse(source, "$parent/$destName")
+            true
+        }
+    }
+
+    private fun copyLocalTreeIntoBrowse(source: File, destPath: String) {
+        if (source.isDirectory) {
+            fileAccess.mkdirs(destPath)
+            source.listFiles()?.forEach { child ->
+                val childName = sanitizeBrowseEntryName(child.name)
+                if (isValidFileEntryName(childName)) {
+                    copyLocalTreeIntoBrowse(child, "$destPath/$childName")
+                }
+            }
+        } else {
+            source.inputStream().use { input ->
+                fileAccess.writeStream(destPath, input, overwrite = false)
+            }
+        }
+    }
+
+    private fun uriDisplayName(resolverContext: Context, uri: Uri): String {
+        val queried = resolverContext.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index).orEmpty() else ""
+        }.orEmpty()
+        if (queried.isNotBlank()) return queried
+        return uri.lastPathSegment?.substringAfterLast('/') ?: "file"
+    }
+
+    private fun sanitizeBrowseEntryName(name: String): String {
+        val cleaned = name
+            .map { ch -> if (ch.code < 32 || ch in "\\/:*?\"<>|") '_' else ch }
+            .joinToString("")
+            .trim()
+            .trim('.')
+        return cleaned.ifBlank { "file" }.take(160)
+    }
+
+    private fun uniqueBrowseName(dir: String, fileName: String): String {
+        if (!fileAccess.exists("$dir/$fileName")) return fileName
+        val dotIndex = fileName.lastIndexOf('.')
+        val stem = if (dotIndex > 0) fileName.substring(0, dotIndex) else fileName
+        val extension = if (dotIndex > 0) fileName.substring(dotIndex) else ""
+        var index = 1
+        while (fileAccess.exists("$dir/$stem-$index$extension")) {
+            index += 1
+        }
+        return "$stem-$index$extension"
+    }
 
     // region 文件复制 / 剪切 / 粘贴
 

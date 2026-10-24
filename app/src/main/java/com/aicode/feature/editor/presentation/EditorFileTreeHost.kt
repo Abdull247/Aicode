@@ -25,5 +25,8 @@ data class EditorFileTreeHost(
     val onPasteEntry: (String, (Boolean) -> Unit) -> Unit,
     val onPasteOverwrite: () -> Unit,
     val onCancelPasteOverwrite: () -> Unit,
-    val onClearClipboard: () -> Unit
+    val onClearClipboard: () -> Unit,
+    val onImportFiles: (String) -> Unit,
+    val onImportFolder: (String) -> Unit,
+    val onCopyPath: (String) -> Unit
 )

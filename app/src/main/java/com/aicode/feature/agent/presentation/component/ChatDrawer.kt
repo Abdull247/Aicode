@@ -168,6 +168,9 @@ fun ChatDrawerContent(
     onPasteOverwrite: () -> Unit,
     onCancelPasteOverwrite: () -> Unit,
     onClearClipboard: () -> Unit,
+    onImportFiles: (String) -> Unit = {},
+    onImportFolder: (String) -> Unit = {},
+    onCopyPath: (String) -> Unit = {},
     onNavigateToBrowser: (() -> Unit)? = null,
     onNavigateToNetwork: (() -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
@@ -345,7 +348,10 @@ fun ChatDrawerContent(
                     onCopyEntry = onCopyEntry,
                     onCutEntry = onCutEntry,
                     onPasteEntry = onPasteEntry,
-                    onClearClipboard = onClearClipboard
+                    onClearClipboard = onClearClipboard,
+                    onImportFiles = onImportFiles,
+                    onImportFolder = onImportFolder,
+                    onCopyPath = onCopyPath
                 )
             }
         }

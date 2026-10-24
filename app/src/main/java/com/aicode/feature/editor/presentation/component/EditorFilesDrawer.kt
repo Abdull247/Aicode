@@ -39,6 +39,9 @@ fun EditorFilesDrawer(
     onCutEntry: (String, String) -> Unit,
     onPasteEntry: (String, (Boolean) -> Unit) -> Unit,
     onClearClipboard: () -> Unit,
+    onImportFiles: (String) -> Unit,
+    onImportFolder: (String) -> Unit,
+    onCopyPath: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -71,7 +74,12 @@ fun EditorFilesDrawer(
             onCutEntry = onCutEntry,
             onPasteEntry = onPasteEntry,
             onClearClipboard = onClearClipboard,
-            modifier = Modifier.weight(1f)
+            onImportFiles = onImportFiles,
+            onImportFolder = onImportFolder,
+            onCopyPath = onCopyPath,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = Spacing.xs)
         )
     }
 }

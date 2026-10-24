@@ -1,5 +1,7 @@
 package com.aicode
 
+import android.content.ClipData
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -47,6 +49,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -460,7 +464,9 @@ fun AppNavigation(
 
     // ── 导出会话：SAF 保存文件 ──
     var pendingExportSessionId by remember { mutableStateOf<String?>(null) }
+    var pendingImportParent by remember { mutableStateOf<String?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = LocalClipboard.current
     val sessionExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
@@ -483,6 +489,28 @@ fun AppNavigation(
             }
         } else {
             pendingExportSessionId = null
+        }
+    }
+    val importFilesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        val parent = pendingImportParent
+        pendingImportParent = null
+        if (parent != null && uris.isNotEmpty()) {
+            agentViewModel.importBrowseFiles(parent, uris, context) { ok ->
+                if (!ok) toastFileOpFailed(context, R.string.file_browser_import_failed)
+            }
+        }
+    }
+    val importFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        val parent = pendingImportParent
+        pendingImportParent = null
+        if (parent != null && uri != null) {
+            agentViewModel.importBrowseFolder(parent, uri, context) { ok ->
+                if (!ok) toastFileOpFailed(context, R.string.file_browser_import_failed)
+            }
         }
     }
 
@@ -608,7 +636,21 @@ fun AppNavigation(
         },
         onPasteOverwrite = { agentViewModel.pasteBrowseEntryOverwrite() },
         onCancelPasteOverwrite = { agentViewModel.clearPasteConflict() },
-        onClearClipboard = { agentViewModel.clearBrowseClipboard() }
+        onClearClipboard = { agentViewModel.clearBrowseClipboard() },
+        onImportFiles = { parent ->
+            pendingImportParent = parent
+            importFilesLauncher.launch(arrayOf("*/*"))
+        },
+        onImportFolder = { parent ->
+            pendingImportParent = parent
+            importFolderLauncher.launch(null)
+        },
+        onCopyPath = { path ->
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("file-path", path)))
+                Toast.makeText(context, context.getString(R.string.git_toast_path_copied), Toast.LENGTH_SHORT).show()
+            }
+        }
     )
 
     // Terminal / Git: on wide screens they toggle inside the workbench pane, on narrow screens
@@ -675,6 +717,20 @@ fun AppNavigation(
                 agentViewModel.pasteBrowseEntry(targetDir, onResult)
             },
             onClearClipboard = { agentViewModel.clearBrowseClipboard() },
+            onImportFiles = { parent ->
+                pendingImportParent = parent
+                importFilesLauncher.launch(arrayOf("*/*"))
+            },
+            onImportFolder = { parent ->
+                pendingImportParent = parent
+                importFolderLauncher.launch(null)
+            },
+            onCopyPath = { path ->
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("file-path", path)))
+                    Toast.makeText(context, context.getString(R.string.git_toast_path_copied), Toast.LENGTH_SHORT).show()
+                }
+            },
             onPasteOverwrite = { agentViewModel.pasteBrowseEntryOverwrite() },
             onCancelPasteOverwrite = { agentViewModel.clearPasteConflict() },
             onSelect = {

@@ -71,8 +71,11 @@ import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
+import compose.icons.feathericons.Download
+import compose.icons.feathericons.Link
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.Upload
 import kotlinx.coroutines.delay
 
 /**
@@ -98,6 +101,9 @@ fun FileBrowserTab(
     onCutEntry: (String, String) -> Unit,
     onPasteEntry: (String, (Boolean) -> Unit) -> Unit,
     onClearClipboard: () -> Unit,
+    onImportFiles: (String) -> Unit = {},
+    onImportFolder: (String) -> Unit = {},
+    onCopyPath: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var creating by remember { mutableStateOf<CreateTarget?>(null) }
@@ -262,6 +268,23 @@ fun FileBrowserTab(
                 menuNode = null
                 onPasteEntry(target) { }
             },
+            onImportFiles = {
+                val target = node.path
+                menuNode = null
+                if (!node.isRoot && node.path !in expandedPaths) onToggleExpand(node.path)
+                onImportFiles(target)
+            },
+            onImportFolder = {
+                val target = node.path
+                menuNode = null
+                if (!node.isRoot && node.path !in expandedPaths) onToggleExpand(node.path)
+                onImportFolder(target)
+            },
+            onCopyPath = {
+                val target = node.path
+                menuNode = null
+                onCopyPath(target)
+            },
             onDismiss = { menuNode = null }
         )
     }
@@ -380,6 +403,9 @@ private fun FileTreeActionSheet(
     onCopy: () -> Unit,
     onCut: () -> Unit,
     onPasteHere: () -> Unit,
+    onImportFiles: () -> Unit,
+    onImportFolder: () -> Unit,
+    onCopyPath: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AdaptiveModalBottomSheet(
@@ -423,7 +449,25 @@ private fun FileTreeActionSheet(
                     tint = MaterialTheme.colorScheme.onSurface,
                     onClick = onNewFolder
                 )
+                FileTreeSheetActionRow(
+                    icon = FeatherIcons.Upload,
+                    label = stringResource(R.string.file_browser_import_files),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    onClick = onImportFiles
+                )
+                FileTreeSheetActionRow(
+                    icon = FeatherIcons.Download,
+                    label = stringResource(R.string.file_browser_import_folder),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    onClick = onImportFolder
+                )
             }
+            FileTreeSheetActionRow(
+                icon = FeatherIcons.Link,
+                label = stringResource(R.string.file_browser_copy_path),
+                tint = MaterialTheme.colorScheme.onSurface,
+                onClick = onCopyPath
+            )
             if (!node.isRoot) {
                 FileTreeSheetActionRow(
                     icon = FeatherIcons.Copy,

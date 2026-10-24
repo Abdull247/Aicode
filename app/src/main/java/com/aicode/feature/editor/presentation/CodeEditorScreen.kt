@@ -262,7 +262,10 @@ fun CodeEditorScreen(
                     onCopyEntry = fileTreeHost.onCopyEntry,
                     onCutEntry = fileTreeHost.onCutEntry,
                     onPasteEntry = fileTreeHost.onPasteEntry,
-                    onClearClipboard = fileTreeHost.onClearClipboard
+                    onClearClipboard = fileTreeHost.onClearClipboard,
+                    onImportFiles = fileTreeHost.onImportFiles,
+                    onImportFolder = fileTreeHost.onImportFolder,
+                    onCopyPath = fileTreeHost.onCopyPath
                 )
             }
         }

@@ -41,16 +41,24 @@ AI 在对话中引用代码时会把路径写成可点击的链接（带下划�
 
 远程 SSH 工作区无法监听远程文件系统的变动，**只能**依靠这两个时机刷新，发现列表和实际不符时点击刷新按钮。远程模式下读目录要走网络，可能有短暂的加载状态，失败时会在列表位置显示具体原因。
 
-## 新建、重命名、删除
+## Create, import, rename, delete
 
-**长按目录行**（包括最顶部的工作区根），从底部菜单里选「新建文件」或「新建文件夹」，新建的条目落在该目录下。如果长按的是折叠状态的目录，会先自动展开好让你看到结果。
+**Long-press a folder** (including the workspace root) and choose **New file** or **New folder**. The new item is created in that folder. If the folder is collapsed, it expands so you can see the result.
 
-名称只能是单个条目名：含 `/`、`\` 或是 `.`、`..` 时确认按钮不可点击——避免误创建到其他目录。同名条目已存在或目录不可写时会提示失败，不会覆盖原有文件。
+Names must be a single entry: `/`, `\`, `.`, or `..` disable the confirm button so nothing is created outside the folder. If the name already exists or the folder is not writable, the app reports failure and does not overwrite.
 
-**长按文件或子目录行**可以重命名和删除（工作区根节点只能新建）：
+The same menu also imports from the device:
 
-- **重命名**：只在同一目录内改名，不做跨目录移动。
-- **删除**：文件直接删除；文件夹会连同里面全部内容递归删除，所以会先弹确认框。
+- **Import files**: pick one or more files; they are copied into that folder.
+- **Import folder**: pick a device folder; the whole tree is copied in. Folder import only works for directories the app can resolve to a real path on shared storage.
+- Same-name items get a numeric suffix (`readme-1.md`) and are not overwritten.
+
+**Copy path** is available on files and folders and copies the workspace path to the clipboard.
+
+**Long-press a file or subfolder** to rename or delete it (the workspace root can only create or import):
+
+- **Rename**: rename in the same folder only; this does not move across folders.
+- **Delete**: files are deleted immediately; folders are deleted recursively after a confirmation prompt.
 
 ::: danger 删除不可撤销
 删除不进回收站，也不受检查点保护。确认前请考虑清楚，尤其是删除文件夹。
