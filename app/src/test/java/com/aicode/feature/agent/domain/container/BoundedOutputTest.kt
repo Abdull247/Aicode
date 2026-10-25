@@ -16,7 +16,7 @@ class BoundedOutputTest {
         val built = output.build()
         assertTrue(built.startsWith("aaaaa"))
         assertTrue(built.endsWith("ccccc"))
-        assertTrue(built.contains("省略中间"))
+        assertTrue(built.contains("characters in the middle"))
     }
 
     @Test
@@ -40,8 +40,8 @@ class BoundedOutputTest {
 
         val built = output.build()
         assertTrue(built.startsWith("abcd"))
-        assertTrue(built.contains("已省略后续"))
-        assertFalse(built.contains("保留开头与结尾"))
+        assertTrue(built.contains("omitted"))
+        assertFalse(built.contains("in the middle"))
     }
 
     @Test

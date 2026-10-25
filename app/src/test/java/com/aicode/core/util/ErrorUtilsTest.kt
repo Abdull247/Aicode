@@ -56,7 +56,7 @@ class ErrorUtilsTest {
     fun socketTimeoutException_friendlyName() {
         val e = java.net.SocketTimeoutException()
         val msg = e.toUserMessage()
-        assert(msg.contains("超时"))
+        assert(msg.contains("timed out"))
     }
 
     @Test

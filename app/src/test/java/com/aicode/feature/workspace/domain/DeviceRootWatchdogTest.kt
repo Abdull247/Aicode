@@ -8,18 +8,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 看门狗线程体的中断安全性回归测试。
+ * Regression tests for the interrupt safety of the watchdog thread body.
  *
- * 背景：v1.0.4 真机崩溃（DEVICE_ROOT、聊天页、Thread-845、InterruptedException@Thread.sleep）
- * 的根因是第二次 sleep（destroy 后的宽限期）没有保护——主流程 finally 的 interrupt 落在
- * 判超时之后、宽限 sleep 之中，异常逃出 run() 后被默认未捕获处理器崩掉整个 App。
+ * Background: the v1.0.4 on-device crash (DEVICE_ROOT, chat screen, Thread-845,
+ * InterruptedException@Thread.sleep). Root cause: the second sleep (the grace period
+ * after destroy) was unprotected — the finally-interrupt from the main flow landed
+ * after the timeout verdict, during the grace sleep, and the exception escaping run()
+ * was escalated by the default uncaught-exception handler, crashing the whole app.
  *
- * 注意断言方式：线程死了 isAlive 也是 false，所以必须挂 UncaughtExceptionHandler
- * 记录是否有异常逃逸，否则测试会被旧代码"骗过"。
+ * Note on assertions: a dead thread also reports isAlive == false, so we must attach an
+ * UncaughtExceptionHandler to record escaping exceptions; otherwise the test can be
+ * fooled by the old code.
  */
 class DeviceRootWatchdogTest {
 
-    /** 跨平台的长驻子进程：Windows 用 ping（timeout 命令拒绝管道 stdin），其余用 sleep。 */
+    /** Long-lived subprocess that works cross-platform: ping on Windows (the timeout command refuses piped stdin), sleep elsewhere. */
     private fun sleeper(): ProcessBuilder =
         if ((System.getProperty("os.name") ?: "").startsWith("Windows")) {
             ProcessBuilder("cmd", "/c", "ping -n 30 127.0.0.1")
@@ -27,7 +30,7 @@ class DeviceRootWatchdogTest {
             ProcessBuilder("sleep", "30")
         }
 
-    /** 看门狗线程 + 逃逸异常捕获；返回 Pair(线程, 捕获槽)。 */
+    /** Watchdog thread + escaped-exception capture; returns Pair(thread, capture slot). */
     private fun watchdog(process: Process, timeoutMs: Long, timedOut: AtomicBoolean): Pair<Thread, AtomicReference<Throwable>> {
         val escaped = AtomicReference<Throwable>()
         val t = Thread({ runShWatchdog(process, timeoutMs, timedOut) }, "watchdog-test")
@@ -37,28 +40,28 @@ class DeviceRootWatchdogTest {
     }
 
     @Test
-    fun `中断落在宽限期_看门狗自行退出且不逃逸异常`() {
+    fun `interrupt during grace period_watchdog exits cleanly with no escaped exception`() {
         val p = sleeper().start()
         try {
             val timedOut = AtomicBoolean(false)
             val (t, escaped) = watchdog(p, 150, timedOut)
             t.start()
-            // 150ms 首睡已过、destroy 已执行，此刻正处在 200ms 宽限睡中
+            // past the 150ms first sleep with destroy already run; now inside the 200ms grace sleep
             Thread.sleep(280)
-            t.interrupt() // 模拟主流程 finally 的中断此刻到达
+            t.interrupt() // simulate the main flow's finally-interrupt arriving now
             t.join(3000)
 
-            assertNull("不得有未捕获异常逃逸 run()（v1.0.4 崩溃根因）", escaped.get())
-            assertFalse("看门狗线程应自行退出", t.isAlive)
-            assertTrue("应已判定超时", timedOut.get())
-            assertFalse("子进程应已被销毁", p.isAlive)
+            assertNull("no uncaught exception may escape run() (root cause of the v1.0.4 crash)", escaped.get())
+            assertFalse("watchdog thread should exit on its own", t.isAlive)
+            assertTrue("should have been judged timed out", timedOut.get())
+            assertFalse("subprocess should have been destroyed", p.isAlive)
         } finally {
             p.destroyForcibly()
         }
     }
 
     @Test
-    fun `中断落在首次睡眠_干净退出且不逃逸异常`() {
+    fun `interrupt during the first sleep_exits cleanly with no escaped exception`() {
         val p = sleeper().start()
         try {
             val timedOut = AtomicBoolean(false)
@@ -68,16 +71,16 @@ class DeviceRootWatchdogTest {
             t.interrupt()
             t.join(3000)
 
-            assertNull("不得有未捕获异常逃逸 run()", escaped.get())
+            assertNull("no uncaught exception may escape run()", escaped.get())
             assertFalse(t.isAlive)
-            assertFalse("未超时不应置位", timedOut.get())
+            assertFalse("not timed out; should not be set", timedOut.get())
         } finally {
             p.destroyForcibly()
         }
     }
 
     @Test
-    fun `进程已退出_看门狗空转不误判`() {
+    fun `process already exited_watchdog idles without false timeout`() {
         val p = sleeper().start()
         p.destroyForcibly()
         p.waitFor()
@@ -87,6 +90,6 @@ class DeviceRootWatchdogTest {
         t.join(3000)
         assertNull("不得有未捕获异常逃逸 run()", escaped.get())
         assertFalse(t.isAlive)
-        assertFalse("进程已死，不应判超时", timedOut.get())
+        assertFalse("process dead; should not be judged timed out", timedOut.get())
     }
 }
