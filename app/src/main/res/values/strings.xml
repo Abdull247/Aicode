@@ -82,6 +82,24 @@
 
     <string name="settings_mcp">MCP Servers</string>
     <string name="settings_skills">Skills</string>
+    <string name="settings_available_tools">Available Tools</string>
+    <string name="settings_available_tools_subtitle">All tools the AI can use</string>
+    <string name="tools_category_files">Files</string>
+    <string name="tools_category_execution">Commands &amp; terminal</string>
+    <string name="tools_category_network">Network</string>
+    <string name="tools_category_ai">AI collaboration</string>
+    <string name="tools_category_extensions">Extensions</string>
+    <string name="tools_group_empty">No tools in this group</string>
+    <string name="tools_permission_header">Permission</string>
+    <string name="tools_permission_mode">Approval</string>
+    <string name="tools_permission_auto">Auto-approved</string>
+    <string name="tools_permission_ask">Needs confirmation</string>
+    <string name="tools_permission_note_auto">Runs automatically in all session modes without confirmation.</string>
+    <string name="tools_permission_note_ask">Confirmed before running in Build mode; writes are denied in Plan and Ask modes.</string>
+    <string name="tools_parameters_header">Parameters</string>
+    <string name="tools_parameters_empty">This tool takes no parameters.</string>
+    <string name="tools_param_required">required</string>
+    <string name="tools_param_optional">optional</string>
     <string name="settings_container">Container &amp; Images</string>
     <string name="settings_log_no_files">No log files yet</string>
     <string name="settings_log_read_failed">Failed to read log: %1$s</string>
