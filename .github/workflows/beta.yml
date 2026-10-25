@@ -155,10 +155,11 @@ jobs:
               --v1-signing-enabled true \
               --v2-signing-enabled true \
               --v3-signing-enabled true \
+              --min-sdk-version 1 \
               --out "$tmp" \
               "$apk"
             mv "$tmp" "$apk"
-            "$APKSIGNER" verify --verbose "$apk" 2>&1 | tee /tmp/apk-verify.txt
+            "$APKSIGNER" verify --verbose --min-sdk-version 1 "$apk" 2>&1 | tee /tmp/apk-verify.txt
             if ! grep -q "Verified using v1 scheme (JAR signing): true" /tmp/apk-verify.txt; then
               echo "::error::$apk still has no valid v1 JAR signature"
               exit 1
