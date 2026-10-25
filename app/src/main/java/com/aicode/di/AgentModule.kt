@@ -94,6 +94,8 @@ import com.aicode.feature.agent.domain.tool.mode.PlanModeTool
 import com.aicode.feature.agent.domain.tool.search.WebFetchTool
 import com.aicode.feature.agent.domain.tool.search.WebSearchTool
 import com.aicode.feature.agent.domain.tool.browser.BrowserTool
+import com.aicode.feature.agent.domain.tool.github.GitHubTool
+import com.aicode.feature.agent.domain.tool.github.GitHubWriteTool
 import com.aicode.feature.agent.domain.workflow.ContextCompactor
 import com.aicode.feature.agent.domain.workflow.StatefulAgentWorkflow
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
@@ -376,7 +378,9 @@ object AgentModule {
         memoryTool: MemoryTool,
         taskTool: TaskTool,
         messageParentTool: MessageParentTool,
-        browserTool: BrowserTool
+        browserTool: BrowserTool,
+        githubTool: GitHubTool,
+        githubWriteTool: GitHubWriteTool
     ): ToolRegistry {
         return ToolRegistry().apply {
             register("readFile", readFileTool)
@@ -403,6 +407,9 @@ object AgentModule {
             register("task", taskTool)
             register("messageParent", messageParentTool)
             register("browser", browserTool)
+            // GitHub 工具放末尾：交互频率低于内置工具，且注册顺序即 schema 顺序，不挤占清单前段。
+            register("github", githubTool)
+            register("githubWrite", githubWriteTool)
         }
     }
 

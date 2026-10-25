@@ -80,6 +80,9 @@ import com.aicode.feature.agent.presentation.component.MarkdownRenderCache
 import com.aicode.feature.backup.presentation.BackupSection
 import com.aicode.feature.settings.data.repository.AppThemeMode
 import com.aicode.feature.settings.data.repository.BackgroundSettingsRepository
+import com.aicode.feature.settings.data.local.ProviderPreset
+import com.aicode.feature.settings.data.local.ToolCatalogEntry
+import com.aicode.feature.settings.data.local.ToolCatalogLibrary
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.presentation.SettingsViewModel
@@ -116,12 +119,12 @@ import compose.icons.feathericons.Server
 import compose.icons.feathericons.Shield
 import compose.icons.feathericons.Sliders
 import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.Tool
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.Users
 import compose.icons.feathericons.Zap
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
-import com.aicode.feature.settings.data.local.ProviderPreset
 import com.aicode.feature.terminal.data.repository.TerminalSettings
 import com.aicode.feature.terminal.presentation.component.TerminalSettingsSheet
 
@@ -149,6 +152,8 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     ContextWindow(R.string.settings_context_window),
     Mcp(R.string.settings_mcp),
     Skills(R.string.settings_skills),
+    AvailableTools(R.string.settings_available_tools),
+    ToolDetail(R.string.settings_available_tools),
     Prompts(R.string.prompts_title),
     PromptDetail(R.string.prompts_title),
     PromptEditor(R.string.prompts_title),
@@ -190,6 +195,7 @@ private fun SettingsSection.depth(): Int = when (this) {
     SettingsSection.PromptDetail,
     SettingsSection.SkillDetail,
     SettingsSection.SubAgentDetail,
+    SettingsSection.ToolDetail,
     SettingsSection.ContainerDownloads,
         SettingsSection.ContextWindow,
         SettingsSection.PerfPanel,
@@ -350,6 +356,13 @@ fun SettingsScreen(
     var selectedSkill by remember { mutableStateOf<SkillUiEntry?>(null) }
     var skillToDelete by remember { mutableStateOf<SkillUiEntry?>(null) }
 
+    // 可用工具目录：内置 assets 静态加载，仅展示用。langKey 与镜像源显示名同一套判定。
+    val toolCatalog = remember { ToolCatalogLibrary.load(context) }
+    val toolLangKey = if ((languageTag?.takeIf { it.isNotBlank() } ?: java.util.Locale.getDefault().language)
+            .startsWith("zh", ignoreCase = true)
+    ) "zh" else "en"
+    var selectedTool by remember { mutableStateOf<ToolCatalogEntry?>(null) }
+
     // 自定义提示词：右上角「+」弹层可见性 + 编辑目标（新建/编辑/固定片段）
     var showPromptsAddSheet by remember { mutableStateOf(false) }
     var promptEditTarget by remember { mutableStateOf<PromptEditTarget?>(null) }
@@ -404,6 +417,7 @@ fun SettingsScreen(
         SettingsSection.ProviderEditor -> SettingsSection.Providers
         SettingsSection.Log -> logReturnSection.takeUnless { expanded && it == SettingsSection.Menu }
         SettingsSection.SkillDetail -> SettingsSection.Skills
+        SettingsSection.ToolDetail -> SettingsSection.AvailableTools
         SettingsSection.PromptEditor -> promptEditorReturn
         SettingsSection.PromptDetail -> SettingsSection.Prompts
         SettingsSection.SkillEditor -> skillEditorReturn
@@ -927,6 +941,17 @@ fun SettingsScreen(
                         section = SettingsSection.SkillDetail
                     }
                 )
+                SettingsSection.AvailableTools -> AvailableToolsSection(
+                    entries = toolCatalog,
+                    langKey = toolLangKey,
+                    onOpenDetail = {
+                        selectedTool = it
+                        section = SettingsSection.ToolDetail
+                    }
+                )
+                SettingsSection.ToolDetail -> selectedTool?.let {
+                    ToolDetailSection(entry = it, langKey = toolLangKey)
+                }
                 SettingsSection.Prompts -> {
                     val promptsViewModel: com.aicode.feature.settings.presentation.PromptsViewModel =
                         androidx.hilt.navigation.compose.hiltViewModel()
@@ -1623,6 +1648,13 @@ internal fun SettingsMenu(
                 icon = FeatherIcons.MessageSquare,
                 title = stringResource(SettingsSection.Prompts.titleRes),
                 onClick = { onOpen(SettingsSection.Prompts) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Tool,
+                title = stringResource(SettingsSection.AvailableTools.titleRes),
+                subtitle = stringResource(R.string.settings_available_tools_subtitle),
+                onClick = { onOpen(SettingsSection.AvailableTools) }
             )
         }
 
