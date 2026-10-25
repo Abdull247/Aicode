@@ -13,9 +13,7 @@ class ToolCatalogLibraryTest {
               {
                 "name": "readFile",
                 "title": "Read file",
-                "titleZh": "读取文件",
                 "description": "Reads a file.",
-                "descriptionZh": "读取文件。",
                 "category": "files",
                 "permission": "auto",
                 "parameters": [
@@ -23,8 +21,7 @@ class ToolCatalogLibraryTest {
                     "name": "path",
                     "type": "string",
                     "required": true,
-                    "description": "File path",
-                    "descriptionZh": "文件路径"
+                    "description": "File path"
                   },
                   {
                     "name": "start_line",
@@ -40,6 +37,8 @@ class ToolCatalogLibraryTest {
         assertEquals(1, entries.size)
         val entry = entries[0]
         assertEquals("readFile", entry.name)
+        assertEquals("Read file", entry.title)
+        assertEquals("Reads a file.", entry.description)
         assertEquals("files", entry.category)
         assertEquals("auto", entry.permission)
         assertEquals(2, entry.parameters.size)
@@ -54,25 +53,13 @@ class ToolCatalogLibraryTest {
     }
 
     @Test
-    fun titleFor_resolvesLanguageWithFallback() {
-        val entry = ToolCatalogEntry(
-            name = "t",
-            title = "Tool",
-            titleZh = "工具",
-            description = "Desc",
-            descriptionZh = "说明"
-        )
-        assertEquals("Tool", entry.titleFor("en"))
-        assertEquals("工具", entry.titleFor("zh"))
-        assertEquals("Desc", entry.descriptionFor("en"))
-        assertEquals("说明", entry.descriptionFor("zh"))
-    }
-
-    @Test
-    fun titleFor_fallsBackToBaseWhenVariantMissing() {
-        val entry = ToolCatalogEntry(name = "t", title = "Tool", description = "Desc")
-        assertEquals("Tool", entry.titleFor("zh"))
-        assertEquals("Desc", entry.descriptionFor("zh"))
+    fun parse_defaultsApplied() {
+        val text = """[{"name":"x","title":"X"}]"""
+        val entries = ToolCatalogLibrary.parse(text)
+        assertEquals(1, entries.size)
+        assertEquals("extensions", entries[0].category)
+        assertEquals("ask", entries[0].permission)
+        assertTrue(entries[0].parameters.isEmpty())
     }
 
     @Test

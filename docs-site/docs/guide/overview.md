@@ -40,7 +40,7 @@
 | 技能 | 按需加载的专项能力扩展包 → [文档](/guide/skills) |
 | 子代理 | 派生独立会话并行执行任务，可在设置内新建、编辑与启停，支持自定义模型与工具集（1.11.0 起）→ [文档](/guide/subagent) |
 | Shizuku 工具 | AI 的 `Shizuku` 工具：以 adb shell（uid 2000）身份执行系统命令、读写 /sdcard（1.12.0 起）→ [文档](/guide/shizuku) |
-| 可用工具总览 | 查看全部内置工具的用途、参数与授权方式；含 GitHub issue / PR / CI 集成（1.10.0 起）→ [文档](/guide/available-tools) |
+| Available Tools | Browse all built-in tools' purpose, parameters, and permission mode; includes GitHub issue / PR / CI integration (1.10.0+) → [Docs](/guide/available-tools) |
 | 自定义提示词 | 覆盖与定制 AI 系统的提示词片段 → [文档](/guide/custom-prompts) |
 | 记忆与项目规则 | 跨会话长期记忆，以及 AGENTS.md / CLAUDE.md 项目规则 → [文档](/guide/memory) |
 

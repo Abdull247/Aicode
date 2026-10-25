@@ -407,7 +407,8 @@ object AgentModule {
             register("task", taskTool)
             register("messageParent", messageParentTool)
             register("browser", browserTool)
-            // GitHub 工具放末尾：交互频率低于内置工具，且注册顺序即 schema 顺序，不挤占清单前段。
+            // GitHub tools go last: lower call frequency than built-ins, and registration
+            // order is schema order, so they do not crowd the front of the tool list.
             register("github", githubTool)
             register("githubWrite", githubWriteTool)
         }

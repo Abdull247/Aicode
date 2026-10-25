@@ -24,16 +24,12 @@ import com.aicode.R
 import com.aicode.core.theme.Spacing
 import com.aicode.feature.settings.data.local.ToolCatalogEntry
 import com.aicode.feature.settings.data.local.ToolCatalogParam
-import com.aicode.feature.settings.data.local.descriptionFor
 
-/**
- * 工具详情页：名称与说明卡、授权方式卡、参数说明卡。
- * 纯展示页（数据来自 assets/tools_catalog.json），与技能详情页同一分组卡片质感。
- */
+/** Tool detail page: name/summary card, permission card, parameters card. Display only
+ * (data from assets/tools_catalog.json), same grouped-card look as the skill detail page. */
 @Composable
 internal fun ToolDetailSection(
-    entry: ToolCatalogEntry,
-    langKey: String
+    entry: ToolCatalogEntry
 ) {
     Column(
         modifier = Modifier
@@ -43,7 +39,7 @@ internal fun ToolDetailSection(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        // 卡片 1：工具名 + 标题 + 说明
+        // Card 1: tool name + title + description
         SettingsGroup {
             Column(
                 modifier = Modifier
@@ -52,7 +48,7 @@ internal fun ToolDetailSection(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = entry.titleFor(langKey),
+                        text = entry.title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f, fill = false)
@@ -66,14 +62,14 @@ internal fun ToolDetailSection(
                 }
                 Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
-                    text = entry.descriptionFor(langKey),
+                    text = entry.description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
 
-        // 卡片 2：授权方式
+        // Card 2: permission mode
         SettingsGroupHeader(text = stringResource(R.string.tools_permission_header))
         SettingsGroup {
             Row(
@@ -111,7 +107,7 @@ internal fun ToolDetailSection(
             )
         }
 
-        // 卡片 3：参数说明
+        // Card 3: parameters
         SettingsGroupHeader(text = stringResource(R.string.tools_parameters_header))
         SettingsGroup {
             if (entry.parameters.isEmpty()) {
@@ -124,18 +120,17 @@ internal fun ToolDetailSection(
             } else {
                 entry.parameters.forEachIndexed { index, param ->
                     if (index > 0) SettingsDivider()
-                    ToolParamRow(param, langKey)
+                    ToolParamRow(param)
                 }
             }
         }
     }
 }
 
-/** 单个参数行：参数名（等宽）+ 类型/必填 pill + 描述。 */
+/** Single parameter row: name (monospace) + type/required pills + description. */
 @Composable
 private fun ToolParamRow(
-    param: ToolCatalogParam,
-    langKey: String
+    param: ToolCatalogParam
 ) {
     Column(
         modifier = Modifier
@@ -166,10 +161,10 @@ private fun ToolParamRow(
                 backgroundColor = (if (param.required) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline).copy(alpha = 0.12f)
             )
         }
-        if (param.descriptionFor(langKey).isNotBlank()) {
+        if (param.description.isNotBlank()) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = param.descriptionFor(langKey),
+                text = param.description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -42,17 +42,17 @@ import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Terminal
 
-/** 目录分组顺序与图标：key → (标题资源, 图标)。 */
+/** Category display order and icons: key → (title resource, icon). */
 private val CategoryOrder = listOf("files", "execution", "network", "ai", "extensions")
 
 /**
- * 「可用工具」二级页：按类别折叠分组的工具清单，行内展示工具标题与一句话说明，
- * 点击进入工具详情。数据来自 assets/tools_catalog.json，纯展示、不含运行时开关。
+ * Available-tools subpage: tool list grouped into collapsible categories. Each row shows the
+ * tool title with a one-line summary and opens the detail page on tap. Data comes from
+ * assets/tools_catalog.json; display only, no runtime toggles.
  */
 @Composable
 internal fun AvailableToolsSection(
     entries: List<ToolCatalogEntry>,
-    langKey: String,
     onOpenDetail: (ToolCatalogEntry) -> Unit
 ) {
     Column(
@@ -84,7 +84,7 @@ internal fun AvailableToolsSection(
                     } else {
                         groupEntries.forEachIndexed { index, entry ->
                             if (index > 0) SettingsDivider()
-                            ToolRow(entry = entry, langKey = langKey, onClick = { onOpenDetail(entry) })
+                            ToolRow(entry = entry, onClick = { onOpenDetail(entry) })
                         }
                     }
                 }
@@ -93,11 +93,10 @@ internal fun AvailableToolsSection(
     }
 }
 
-/** 单个工具行：类别图标 + 标题/一句话说明 + 右箭头。 */
+/** Single tool row: category icon + title/one-line summary + chevron. */
 @Composable
 private fun ToolRow(
     entry: ToolCatalogEntry,
-    langKey: String,
     onClick: () -> Unit
 ) {
     Row(
@@ -129,14 +128,14 @@ private fun ToolRow(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = entry.titleFor(langKey),
+                text = entry.title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = entry.descriptionFor(langKey),
+                text = entry.description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

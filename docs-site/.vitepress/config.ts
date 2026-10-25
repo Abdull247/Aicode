@@ -146,7 +146,7 @@ export default defineConfig({
             { text: '技能', link: '/guide/skills' },
             { text: '子代理', link: '/guide/subagent' },
             { text: 'Shizuku 工具', link: '/guide/shizuku' },
-            { text: '可用工具总览', link: '/guide/available-tools' },
+            { text: 'Available Tools', link: '/guide/available-tools' },
             { text: '自定义提示词', link: '/guide/custom-prompts' },
             { text: '记忆与项目规则', link: '/guide/memory' }
           ]

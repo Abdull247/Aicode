@@ -356,11 +356,8 @@ fun SettingsScreen(
     var selectedSkill by remember { mutableStateOf<SkillUiEntry?>(null) }
     var skillToDelete by remember { mutableStateOf<SkillUiEntry?>(null) }
 
-    // 可用工具目录：内置 assets 静态加载，仅展示用。langKey 与镜像源显示名同一套判定。
+    // Available-tools catalog: static load from built-in assets, display only.
     val toolCatalog = remember { ToolCatalogLibrary.load(context) }
-    val toolLangKey = if ((languageTag?.takeIf { it.isNotBlank() } ?: java.util.Locale.getDefault().language)
-            .startsWith("zh", ignoreCase = true)
-    ) "zh" else "en"
     var selectedTool by remember { mutableStateOf<ToolCatalogEntry?>(null) }
 
     // 自定义提示词：右上角「+」弹层可见性 + 编辑目标（新建/编辑/固定片段）
@@ -943,14 +940,13 @@ fun SettingsScreen(
                 )
                 SettingsSection.AvailableTools -> AvailableToolsSection(
                     entries = toolCatalog,
-                    langKey = toolLangKey,
                     onOpenDetail = {
                         selectedTool = it
                         section = SettingsSection.ToolDetail
                     }
                 )
                 SettingsSection.ToolDetail -> selectedTool?.let {
-                    ToolDetailSection(entry = it, langKey = toolLangKey)
+                    ToolDetailSection(entry = it)
                 }
                 SettingsSection.Prompts -> {
                     val promptsViewModel: com.aicode.feature.settings.presentation.PromptsViewModel =
