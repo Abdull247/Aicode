@@ -330,12 +330,6 @@ class XmlViewRenderer(
         }
     }
 
-    private fun attach(parent: ViewGroup, node: LayoutNode, topLevel: Boolean) {
-        val view = buildView(node) ?: return
-        view.layoutParams = makeLayoutArgs(parent, effectiveAttrs(node), topLevel)
-        parent.addView(view)
-    }
-
     private fun instantiate(simpleName: String): View = when (simpleName) {
         "TextView" -> TextView(themedContext)
         "EditText" -> EditText(themedContext)
@@ -1069,19 +1063,44 @@ class XmlViewRenderer(
         fun intOf(name: String): Int? = attrs["android:layout_$name"]?.trim()?.toIntOrNull()
         val start = intOf(axis)
         val span = intOf(axis + "Span")
-        val gravity = attrs["android:layout_gravity"]
+        val alignment = attrs["android:layout_gravity"]
+            ?.takeIf { it.isNotBlank() }
             ?.let { ResourceValues.parseGravity(it) }
             ?.takeIf { it != 0 }
-            ?.let { GridLayout.getAlignment(it, horizontal) }
+            ?.let { gridAlignment(it, horizontal) }
         return when {
-            gravity != null && span != null && start != null -> GridLayout.spec(start, span, gravity)
-            gravity != null && start != null -> GridLayout.spec(start, gravity)
-            gravity != null -> GridLayout.spec(GridLayout.UNDEFINED, gravity)
+            alignment != null && span != null && start != null -> GridLayout.spec(start, span, alignment)
+            alignment != null && start != null -> GridLayout.spec(start, alignment)
+            alignment != null -> GridLayout.spec(GridLayout.UNDEFINED, alignment)
             span != null && start != null -> GridLayout.spec(start, span)
             start != null -> GridLayout.spec(start)
             else -> GridLayout.spec(GridLayout.UNDEFINED)
         }
     }
+
+    /**
+     * Maps gravity bits onto GridLayout.Alignment. GridLayout.getAlignment is not part
+     * of the public compile SDK, so the axes are decoded by hand; fill wins over
+     * center, center wins over edge anchors, and the default is CENTER.
+     */
+    private fun gridAlignment(gravity: Int, horizontal: Boolean): GridLayout.Alignment =
+        if (horizontal) {
+            when {
+                gravity and Gravity.FILL_HORIZONTAL == Gravity.FILL_HORIZONTAL -> GridLayout.FILL
+                gravity and Gravity.CENTER_HORIZONTAL != 0 -> GridLayout.CENTER
+                gravity and Gravity.START != 0 || gravity and Gravity.LEFT != 0 -> GridLayout.LEFT
+                gravity and Gravity.END != 0 || gravity and Gravity.RIGHT != 0 -> GridLayout.RIGHT
+                else -> GridLayout.CENTER
+            }
+        } else {
+            when {
+                gravity and Gravity.FILL_VERTICAL == Gravity.FILL_VERTICAL -> GridLayout.FILL
+                gravity and Gravity.CENTER_VERTICAL != 0 -> GridLayout.CENTER
+                gravity and Gravity.TOP != 0 -> GridLayout.TOP
+                gravity and Gravity.BOTTOM != 0 -> GridLayout.BOTTOM
+                else -> GridLayout.CENTER
+            }
+        }
 
     private fun applyMargins(lp: ViewGroup.MarginLayoutParams, attrs: Map<String, String>) {
         fun get(key: String): String? = attrs[key]?.takeIf { it.isNotBlank() }
