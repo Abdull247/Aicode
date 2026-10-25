@@ -59,15 +59,17 @@ object ResourceValues {
 
     /**
      * Parses a gravity token like "left|center_vertical" into gravity bits.
-     * Vertical: top/bottom/center_vertical/fill_vertical; horizontal: left/right/start/end/
-     * center_horizontal/fill_horizontal; "center"/"fill" both axes. Unknown parts ignored.
+     * Vertical: top/bottom/center_vertical/fill_vertical/clip_vertical; horizontal:
+     * left/right/start/end/center_horizontal/fill_horizontal/clip_horizontal; "center"/"fill"
+     * both axes. Unknown parts ignored.
      */
     fun parseGravity(raw: String): Int {
         val verticalBits = mapOf(
             "top" to android.view.Gravity.TOP,
             "bottom" to android.view.Gravity.BOTTOM,
             "center_vertical" to android.view.Gravity.CENTER_VERTICAL,
-            "fill_vertical" to android.view.Gravity.FILL_VERTICAL
+            "fill_vertical" to android.view.Gravity.FILL_VERTICAL,
+            "clip_vertical" to android.view.Gravity.CLIP_VERTICAL
         )
         val horizontalBits = mapOf(
             "left" to android.view.Gravity.LEFT,
@@ -75,7 +77,8 @@ object ResourceValues {
             "start" to android.view.Gravity.START,
             "end" to android.view.Gravity.END,
             "center_horizontal" to android.view.Gravity.CENTER_HORIZONTAL,
-            "fill_horizontal" to android.view.Gravity.FILL_HORIZONTAL
+            "fill_horizontal" to android.view.Gravity.FILL_HORIZONTAL,
+            "clip_horizontal" to android.view.Gravity.CLIP_HORIZONTAL
         )
         var result = 0
         for (part in raw.trim().lowercase().split('|')) {

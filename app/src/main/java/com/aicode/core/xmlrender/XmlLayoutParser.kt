@@ -15,6 +15,8 @@ import java.io.StringReader
  *   on the include tag (except android:id and layout_* ones) override the included root's.
  * - A `<merge>` root reached through an include is spliced into the including parent's children.
  * - A top-level `<merge>` root is kept as-is; the renderer maps it onto a FrameLayout host.
+ * - DataBinding files (`<layout>` root with `<data>`) are unwrapped to their first real
+ *   view child.
  * - `<fragment>` and unknown class tags are kept as nodes with a [LayoutNode.note] so the
  *   renderer draws labeled placeholders instead of failing the whole render.
  *
@@ -43,7 +45,37 @@ class XmlLayoutParser {
                 return placeholder("empty", "Empty or malformed layout: $sourceName")
             }
         }
+        // DataBinding files wrap the real root in <layout> with a <data> sibling; unwrap
+        // to the first non-<data> child so the render starts at the actual view root.
+        if (parser.name == "layout") {
+            while (parser.next() != XmlPullParser.END_DOCUMENT) {
+                when (parser.eventType) {
+                    XmlPullParser.START_TAG -> {
+                        if (parser.name == "data") {
+                            drainElement(parser)
+                            continue
+                        }
+                        return parseNode(parser, sourceName, layoutResolver, depth)
+                    }
+                    XmlPullParser.END_TAG -> break
+                }
+            }
+            return placeholder("empty", "DataBinding layout has no view root: $sourceName")
+        }
         return parseNode(parser, sourceName, layoutResolver, depth)
+    }
+
+    /** Consumes through the END_TAG of the element the parser currently sits on. */
+    private fun drainElement(parser: XmlPullParser) {
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> pending++
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT ->
+                    throw IllegalStateException("Unterminated element <$${parser.name}>")
+            }
+        }
     }
 
     private fun parseNode(
@@ -154,12 +186,19 @@ class XmlLayoutParser {
         /** Custom-view tags whose simple class names map to renderable framework widgets. */
         val KNOWN_SIMPLE_NAMES = setOf(
             "TextView", "EditText", "Button", "ImageView", "ImageButton", "CheckBox",
-            "RadioButton", "Switch", "CheckedTextView", "ProgressBar", "SeekBar",
-            "LinearLayout", "FrameLayout", "RelativeLayout", "GridLayout", "ScrollView",
-            "HorizontalScrollView", "Space", "View", "Toolbar", "ListView", "GridView",
-            "WebView", "TextureView", "SurfaceView", "CardView", "ConstraintLayout",
-            "CoordinatorLayout", "RecyclerView", "ViewPager", "ViewPager2", "SwipeRefreshLayout",
-            "FloatingActionButton", "ChipGroup"
+            "RadioButton", "Switch", "CheckedTextView", "ProgressBar", "SeekBar", "RatingBar",
+            "Spinner", "AutoCompleteTextView", "MultiAutoCompleteTextView",
+            "LinearLayout", "FrameLayout", "RelativeLayout", "GridLayout",
+            "TableLayout", "TableRow", "ScrollView", "HorizontalScrollView", "Space",
+            "View", "Toolbar", "ViewFlipper", "ViewAnimator", "ViewSwitcher",
+            "ListView", "GridView", "WebView", "TextureView", "SurfaceView", "VideoView",
+            "CardView", "ConstraintLayout", "Guideline", "CoordinatorLayout", "RecyclerView",
+            "ViewPager", "ViewPager2", "SwipeRefreshLayout", "NestedScrollView",
+            "FloatingActionButton", "Chip", "ChipGroup", "TabLayout", "TabItem",
+            "BottomNavigationView", "NavigationView", "AppBarLayout",
+            "CollapsingToolbarLayout", "DrawerLayout", "TextInputLayout", "TextInputEditText",
+            "MaterialButton", "MaterialTextView", "MaterialCardView", "ShapeableImageView",
+            "LinearLayoutCompat", "requestFocus"
         )
     }
 }

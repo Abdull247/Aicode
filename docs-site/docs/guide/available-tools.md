@@ -34,11 +34,18 @@ Tap any tool to open its detail page, which shows:
   (one file per layout, latest render wins) and shown in chat — tap the preview row in the
   tool card (or the phone frame in the editor) to open it full screen.
 - Optional parameters: `theme` (light / dark), `width_dp` and `height_dp` for the viewport.
-- The render is **approximate**: standard framework widgets (text, buttons, images,
-  LinearLayout / FrameLayout / RelativeLayout, and similar) draw faithfully, while custom
-  views, fragments, lists, ConstraintLayout constraint rules, and unsupported attributes
-  become labeled placeholders. Every degradation is reported, and the tool result is marked
-  `approximate` so the AI can tell you what may look different.
+- The render is **broad but approximate**: standard framework widgets (text, buttons,
+  images, spinner, rating bar, tables, and all base layouts including
+  LinearLayout / FrameLayout / RelativeLayout / GridLayout) draw faithfully; Material
+  cards, floating action buttons, tab bars, bottom bars, text-field containers and list
+  containers (RecyclerView / ListView / GridView / NavigationView) render as close
+  lookalikes with sample content where an adapter would feed real data; ConstraintLayout
+  parent and sibling constraints are translated into RelativeLayout rules (chains, ratio
+  sizing and bias degrade with a note); shapes, layer-lists (with insets), radial/sweep
+  gradients, dashed strokes, Material theme colors (`?attr/colorPrimary` and friends) and
+  DataBinding-wrapped layouts are supported. Custom view classes, fragments and unsupported
+  attributes become labeled placeholders. Every degradation is reported, and the tool
+  result is marked `approximate` so the AI can tell you what may look different.
 - The code editor shows a phone icon on `.xml` files: tapping it previews the layout you
   are editing (unsaved edits included), re-rendering as you type.
 

@@ -10,6 +10,8 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
 import androidx.core.graphics.PathParser
 import com.aicode.feature.workspace.domain.FileAccessProvider
 import kotlinx.coroutines.Dispatchers
@@ -23,9 +25,10 @@ import kotlin.math.roundToInt
  * Rebuilds the subset of drawable XML the preview needs without instantiating arbitrary
  * project classes: rasters via [BitmapFactory] (through [FileAccessProvider.copyToLocal],
  * so remote workspaces work too), vector drawables by re-drawing their paths into a
- * bitmap, shapes as [GradientDrawable], layer-lists/selectors by picking their most
- * representative layer. Anything unsupported degrades to a neutral placeholder plus a
- * warning — rendering never aborts because one drawable is missing.
+ * bitmap, shapes as [GradientDrawable], layer-lists as real stacked [LayerDrawable]s with
+ * per-layer insets, and selectors/ripples by picking their default layer. Anything
+ * unsupported degrades to a neutral placeholder plus a warning — rendering never aborts
+ * because one drawable is missing.
  */
 class MiniDrawables(
     private val context: Context,
@@ -166,15 +169,102 @@ class MiniDrawables(
         while (parser.eventType != XmlPullParser.START_TAG) {
             if (parser.next() == XmlPullParser.END_DOCUMENT) return null
         }
-        return when (parser.name) {
+        return dispatchElement(parser, parser.name, displayToken, depth = 0)
+    }
+
+    /**
+     * Builds one drawable element; the parser must be sitting on its START_TAG, and the
+     * element is consumed exactly through its END_TAG. Shared by the document root and
+     * inline drawable children of layer-list/selector items.
+     */
+    private suspend fun dispatchElement(
+        parser: XmlPullParser,
+        name: String,
+        displayToken: String,
+        depth: Int
+    ): Drawable? {
+        if (depth > MAX_NESTED_DRAWABLE_DEPTH) {
+            warnings.add("Drawable nesting too deep: $displayToken")
+            return null
+        }
+        return when (name) {
             "vector" -> vectorDrawable(parser)
             "shape" -> shapeDrawable(parser)
-            "layer-list" -> firstLayer(parser, displayToken)
-            "selector", "ripple" -> selectorLayer(parser, displayToken)
-            "inset" -> insetDrawable(parser, displayToken)
+            "layer-list" -> layerList(parser, displayToken, depth)
+            "selector", "ripple" -> selectorLayer(parser, displayToken, depth)
+            "inset" -> insetDrawable(parser, displayToken, depth)
             else -> {
-                warnings.add("Unsupported drawable XML <${parser.name}>: $displayToken")
+                warnings.add("Unsupported drawable XML <$name>: $displayToken")
+                skipElement(parser)
                 null
+            }
+        }
+    }
+
+    /** Consumes through the END_TAG of the element the parser currently sits on. */
+    private fun skipElement(parser: XmlPullParser) {
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> pending++
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT -> return
+            }
+        }
+    }
+
+    /**
+     * Resolves one <item> layer: either its android:drawable reference / android:color,
+     * or the first inline drawable element it nests. The parser enters on the item's
+     * START_TAG and consumes the item element COMPLETELY, including its (synthetic or
+     * explicit) END_TAG. Callers must count the item's START without expecting to read
+     * its END themselves.
+     */
+    private suspend fun itemDrawable(
+        parser: XmlPullParser,
+        displayToken: String,
+        depth: Int
+    ): Drawable? {
+        var ref: String? = null
+        var color: Int? = null
+        for (i in 0 until parser.attributeCount) {
+            when (parser.getAttributeName(i)) {
+                "drawable" -> ref = parser.getAttributeValue(i)
+                "color" -> color = drawableColor(parser, "color")
+            }
+        }
+        var event = parser.next()
+        while (event == XmlPullParser.TEXT || event == XmlPullParser.COMMENT) {
+            event = parser.next()
+        }
+        return when {
+            event == XmlPullParser.START_TAG -> {
+                val inline = dispatchElement(parser, parser.name, displayToken, depth + 1)
+                drainToItemEnd(parser)
+                inline
+            }
+            ref != null && ref.startsWith("@") -> resolve(ref)
+            else -> if (ref != null) {
+                // Non-resource reference inside an item has no representation here.
+                warnings.add("Layer reference unsupported: $ref in $displayToken")
+                null
+            } else {
+                color?.let(::ColorDrawable)
+            }
+        }
+    }
+
+    /**
+     * Consumes events up to and including the enclosing <item> END_TAG. Used after an
+     * inline child finished consuming its own element, leaving the item's END next.
+     */
+    private fun drainToItemEnd(parser: XmlPullParser) {
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> pending++
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT -> return
             }
         }
     }
@@ -200,27 +290,33 @@ class MiniDrawables(
 
         val paths = mutableListOf<PathSpec>()
         var current: PathSpec? = null
-        var event = parser.next()
-        while (event != XmlPullParser.END_DOCUMENT) {
-            when (event) {
-                XmlPullParser.START_TAG -> if (parser.name == "path") {
-                    current = PathSpec()
-                    for (i in 0 until parser.attributeCount) {
-                        when (parser.getAttributeName(i)) {
-                            "pathData" -> current!!.pathData = parser.getAttributeValue(i)
-                            "fillColor" -> current!!.fillColor = parser.getAttributeValue(i)
-                            "strokeColor" -> current!!.strokeColor = parser.getAttributeValue(i)
-                            "strokeWidth" ->
-                                current!!.strokeWidth = parser.getAttributeValue(i)?.toFloatOrNull() ?: 0f
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> {
+                    pending++
+                    if (parser.name == "path") {
+                        current = PathSpec()
+                        for (i in 0 until parser.attributeCount) {
+                            when (parser.getAttributeName(i)) {
+                                "pathData" -> current!!.pathData = parser.getAttributeValue(i)
+                                "fillColor" -> current!!.fillColor = parser.getAttributeValue(i)
+                                "strokeColor" -> current!!.strokeColor = parser.getAttributeValue(i)
+                                "strokeWidth" ->
+                                    current!!.strokeWidth = parser.getAttributeValue(i)?.toFloatOrNull() ?: 0f
+                            }
                         }
                     }
                 }
-                XmlPullParser.END_TAG -> if (parser.name == "path") {
-                    current?.let { if (it.pathData != null) paths += it }
-                    current = null
+                XmlPullParser.END_TAG -> {
+                    pending--
+                    if (parser.name == "path") {
+                        current?.let { if (it.pathData != null) paths += it }
+                        current = null
+                    }
                 }
+                XmlPullParser.END_DOCUMENT -> return null
             }
-            event = parser.next()
         }
         if (paths.isEmpty()) return null
 
@@ -270,35 +366,66 @@ class MiniDrawables(
             "ring" -> GradientDrawable.RING
             else -> GradientDrawable.RECTANGLE
         }
-        var event = parser.next()
-        while (event != XmlPullParser.END_DOCUMENT) {
-            if (event == XmlPullParser.START_TAG) {
-                when (parser.name) {
-                    "solid" -> drawableColor(parser, "color")?.let { drawable.setColor(it) }
-                    "corners" -> {
-                        dimAttr(parser, "radius")?.let { drawable.cornerRadius = it }
-                        cornerRadii(parser)?.let { drawable.setCornerRadii(it) }
-                    }
-                    "stroke" -> {
-                        val width = (dimAttr(parser, "width") ?: 0f).roundToInt()
-                        drawableColor(parser, "color")?.let { drawable.setStroke(width, it) }
-                    }
-                    "gradient" -> {
-                        val start = drawableColor(parser, "startColor") ?: DEFAULT_GRADIENT
-                        val end = drawableColor(parser, "endColor") ?: start
-                        drawable.setColors(intArrayOf(start, end))
-                        drawable.setOrientation(gradientOrientation(angleAttr(parser)))
-                    }
-                    "size" -> {
-                        val width = dimAttr(parser, "width")?.roundToInt() ?: 0
-                        val height = dimAttr(parser, "height")?.roundToInt() ?: 0
-                        if (width > 0 && height > 0) drawable.setSize(width, height)
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> {
+                    pending++
+                    when (parser.name) {
+                        "solid" -> drawableColor(parser, "color")?.let { drawable.setColor(it) }
+                        "corners" -> {
+                            dimAttr(parser, "radius")?.let { drawable.cornerRadius = it }
+                            cornerRadii(parser)?.let { drawable.setCornerRadii(it) }
+                        }
+                        "stroke" -> {
+                            val width = (dimAttr(parser, "width") ?: 0f).roundToInt()
+                            val color = drawableColor(parser, "color")
+                            val dash = dimAttr(parser, "dashWidth")
+                            val gap = dimAttr(parser, "dashGap")
+                            when {
+                                color == null -> Unit
+                                dash != null && dash > 0f && gap != null ->
+                                    drawable.setStroke(width, color, dash, gap)
+                                else -> drawable.setStroke(width, color)
+                            }
+                        }
+                        "gradient" -> applyGradient(parser, drawable)
+                        "size" -> {
+                            val width = dimAttr(parser, "width")?.roundToInt() ?: 0
+                            val height = dimAttr(parser, "height")?.roundToInt() ?: 0
+                            if (width > 0 && height > 0) drawable.setSize(width, height)
+                        }
                     }
                 }
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT -> return drawable
             }
-            event = parser.next()
         }
         return drawable
+    }
+
+    private fun applyGradient(parser: XmlPullParser, drawable: GradientDrawable) {
+        val start = drawableColor(parser, "startColor") ?: drawableColor(parser, "color") ?: DEFAULT_GRADIENT
+        val middle = drawableColor(parser, "centerColor")
+        val end = drawableColor(parser, "endColor") ?: start
+        when {
+            middle != null -> drawable.setColors(intArrayOf(start, middle, end))
+            else -> drawable.setColors(intArrayOf(start, end))
+        }
+        drawable.setOrientation(gradientOrientation(angleAttr(parser)))
+        when (attrOf(parser, "type")) {
+            "radial" -> {
+                drawable.setGradientType(GradientDrawable.RADIAL_GRADIENT)
+                val radius = dimAttr(parser, "gradientRadius")
+                drawable.setGradientRadius(radius ?: (24 * density))
+            }
+            "sweep" -> drawable.setGradientType(GradientDrawable.SWEEP_GRADIENT)
+        }
+        val centerX = attrOf(parser, "centerX")?.toFloatOrNull()
+        val centerY = attrOf(parser, "centerY")?.toFloatOrNull()
+        if (centerX != null || centerY != null) {
+            drawable.setGradientCenter(centerX ?: 0.5f, centerY ?: 0.5f)
+        }
     }
 
     private fun gradientOrientation(angle: Int) = when (angle) {
@@ -323,64 +450,127 @@ class MiniDrawables(
         )
     }
 
-    /** Layer-list keeps only its first layer (flat approximation). */
-    private suspend fun firstLayer(parser: XmlPullParser, displayToken: String): Drawable? {
-        var event = parser.next()
-        while (event != XmlPullParser.END_DOCUMENT) {
-            if (event == XmlPullParser.START_TAG && parser.name == "item") {
-                for (i in 0 until parser.attributeCount) {
-                    when (parser.getAttributeName(i)) {
-                        "drawable" -> return resolve(parser.getAttributeValue(i))
-                        "color" -> drawableColor(parser, "color")?.let { return ColorDrawable(it) }
+    /**
+     * Full-fidelity layer-list: every item becomes a real layer in a [LayerDrawable],
+     * first item bottom-most like on Android, honoring per-item inset offsets.
+     */
+    private suspend fun layerList(
+        parser: XmlPullParser,
+        displayToken: String,
+        depth: Int
+    ): Drawable? {
+        val layers = mutableListOf<Drawable>()
+        val insets = mutableListOf<IntArray>()
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> {
+                    if (parser.name == "item" && pending == 1) {
+                        // itemDrawable consumes the whole item element (attrs, optional
+                        // inline child, and its END_TAG), so depth stays balanced: the
+                        // item's START is accounted for here, its END never reaches us.
+                        insets += itemInsets(parser)
+                        val layer = itemDrawable(parser, displayToken, depth)
+                        if (layer != null) layers += layer else insets.removeAt(insets.lastIndex)
+                    } else {
+                        pending++
                     }
                 }
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT -> pending = 0
             }
-            event = parser.next()
         }
-        warnings.add("Layer-list has no drawable layer: $displayToken")
-        return null
+        if (layers.isEmpty()) {
+            warnings.add("Layer-list has no drawable layer: $displayToken")
+            return null
+        }
+        val drawable = LayerDrawable(layers.toTypedArray())
+        for (i in layers.indices) {
+            val inset = insets.getOrNull(i) ?: continue
+            drawable.setLayerInset(i, inset[0], inset[1], inset[2], inset[3])
+        }
+        return drawable
     }
 
-    /** Selectors render their default (state-less) layer; first layer as fallback. */
-    private suspend fun selectorLayer(parser: XmlPullParser, displayToken: String): Drawable? {
-        var first: Drawable? = null
-        var event = parser.next()
-        while (event != XmlPullParser.END_DOCUMENT) {
-            if (event == XmlPullParser.START_TAG && parser.name == "item") {
-                var hasStates = false
-                var layer: Drawable? = null
-                for (i in 0 until parser.attributeCount) {
-                    when (parser.getAttributeName(i)) {
-                        "drawable" -> layer = resolve(parser.getAttributeValue(i))
-                        "color" -> drawableColor(parser, "color")?.let { layer = ColorDrawable(it) }
-                        else -> hasStates = true
-                    }
-                }
-                if (!hasStates && layer != null) return layer
-                if (first == null) first = layer
-            }
-            event = parser.next()
-        }
-        if (first == null) warnings.add("Selector without a default layer: $displayToken")
-        return first
+    /** Per-item inset offsets (LTR mapping of left/start, right/end). */
+    private fun itemInsets(parser: XmlPullParser): IntArray {
+        val left = dimAttr(parser, "left") ?: dimAttr(parser, "start") ?: 0f
+        val right = dimAttr(parser, "right") ?: dimAttr(parser, "end") ?: 0f
+        val top = dimAttr(parser, "top") ?: 0f
+        val bottom = dimAttr(parser, "bottom") ?: 0f
+        return intArrayOf(left.roundToInt(), top.roundToInt(), right.roundToInt(), bottom.roundToInt())
     }
 
-    /** Inset drawables wrap their inner drawable; padding is dropped (approximation). */
-    private suspend fun insetDrawable(parser: XmlPullParser, displayToken: String): Drawable? {
-        var event = parser.next()
-        while (event != XmlPullParser.END_DOCUMENT) {
-            if (event == XmlPullParser.START_TAG) {
-                for (i in 0 until parser.attributeCount) {
-                    if (parser.getAttributeName(i) == "drawable") {
-                        return resolve(parser.getAttributeValue(i))
+    /**
+     * Selectors render their default (state-less) layer, falling back to the first
+     * concrete layer; ripples degrade identically (static snapshot).
+     */
+    private suspend fun selectorLayer(
+        parser: XmlPullParser,
+        displayToken: String,
+        depth: Int
+    ): Drawable? {
+        val layers = mutableListOf<Drawable>()
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> {
+                    if (parser.name == "item" && pending == 1) {
+                        // itemDrawable owns the item's full element, including its END.
+                        itemDrawable(parser, displayToken, depth)?.let { layers += it }
+                    } else {
+                        pending++
                     }
                 }
-                return null
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT -> pending = 0
             }
-            event = parser.next()
         }
-        warnings.add("Empty inset drawable: $displayToken")
-        return null
+        val default = layers.firstOrNull()
+        if (default == null) {
+            warnings.add("Selector without a drawable layer: $displayToken")
+        }
+        return default
+    }
+
+    /** Inset drawables wrap their inner drawable; offsets honored via real InsetDrawable. */
+    private suspend fun insetDrawable(
+        parser: XmlPullParser,
+        displayToken: String,
+        depth: Int
+    ): Drawable? {
+        val inset = intArrayOf(
+            (dimAttr(parser, "insetLeft") ?: dimAttr(parser, "insetStart") ?: 0f).roundToInt(),
+            dimAttr(parser, "insetTop")?.roundToInt() ?: 0,
+            (dimAttr(parser, "insetRight") ?: dimAttr(parser, "insetEnd") ?: 0f).roundToInt(),
+            (dimAttr(parser, "insetBottom") ?: dimAttr(parser, "insetTop") ?: 0f).roundToInt()
+        )
+        var ref: String? = null
+        for (i in 0 until parser.attributeCount) {
+            if (parser.getAttributeName(i) == "drawable") ref = parser.getAttributeValue(i)
+        }
+        var inline: Drawable? = null
+        var inlineSeen = false
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> {
+                    if (!inlineSeen) {
+                        inlineSeen = true
+                        // dispatchElement consumes the child element completely, so it is
+                        // depth-neutral here; only the inset's own END moves pending.
+                        inline = dispatchElement(parser, parser.name, displayToken, depth + 1)
+                    } else {
+                        skipElement(parser)
+                    }
+                }
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT -> pending = 0
+            }
+        }
+        if (inline == null && ref != null) inline = resolve(ref)
+        return inline?.let { InsetDrawable(it, inset[0], inset[1], inset[2], inset[3]) }
+            ?: null.also { warnings.add("Empty inset drawable: $displayToken") }
     }
 
     private fun attrOf(parser: XmlPullParser, name: String): String? {
@@ -422,6 +612,7 @@ class MiniDrawables(
 
     private companion object {
         const val MAX_RASTER_EDGE = 2048
+        const val MAX_NESTED_DRAWABLE_DEPTH = 6
         const val VIEWPORT = 24f
         val DEFAULT_GRADIENT = 0xFF9E9E9E.toInt()
 
@@ -436,15 +627,30 @@ class MiniDrawables(
             "colorprimary" to (0xFF3F51B5.toInt() to 0xFF2196F3.toInt()),
             "colorprimarydark" to (0xFF303F9F.toInt() to 0xFF1976D2.toInt()),
             "colorprimaryvariant" to (0xFF303F9F.toInt() to 0xFF1976D2.toInt()),
-            "coloraccent" to (0xFFFF4081.toInt() to 0xFFFFAB40.toInt()),
             "coloronprimary" to (0xFFFFFFFF.toInt() to 0xFFFFFFFF.toInt()),
+            "colorprimarycontainer" to (0xFFE8EAF6.toInt() to 0xFF3C4256.toInt()),
+            "coloronprimarycontainer" to (0xFF1A237E.toInt() to 0xFFE8EAF6.toInt()),
+            "colorsecondary" to (0xFF009688.toInt() to 0xFF4DB6AC.toInt()),
+            "coloronsecondary" to (0xFFFFFFFF.toInt() to 0xFF00332E.toInt()),
+            "colorsecondarycontainer" to (0xFFE0F2F1.toInt() to 0xFF00504A.toInt()),
+            "coloronsecondarycontainer" to (0xFF00695C.toInt() to 0xFFB2DFDB.toInt()),
+            "coloraccent" to (0xFFFF4081.toInt() to 0xFFFFAB40.toInt()),
             "colorsurface" to (0xFFFFFFFF.toInt() to 0xFF121212.toInt()),
             "coloronsurface" to (0xDE000000.toInt() to 0xFFFFFFFF.toInt()),
+            "colorsurfacevariant" to (0xFFF2F3F5.toInt() to 0xFF2A2C2F.toInt()),
+            "coloronsurfacevariant" to (0x8A000000.toInt() to 0xB3FFFFFF.toInt()),
+            "coloroutline" to (0x61000000.toInt() to 0x8AFFFFFF.toInt()),
             "colorerror" to (0xFFB00020.toInt() to 0xFFCF6679.toInt()),
+            "coloronerror" to (0xFFFFFFFF.toInt() to 0xFF220101.toInt()),
+            "colorbuttonnormal" to (0xFFE0E0E0.toInt() to 0xFF5A5A5A.toInt()),
+            "colorswitchthumbnormal" to (0xFFF1F1F1.toInt() to 0xFF5A5A5A.toInt()),
             "androidcolorprimary" to (0xFF3F51B5.toInt() to 0xFF2196F3.toInt()),
             "androidcoloraccent" to (0xFFFF4081.toInt() to 0xFFFFAB40.toInt()),
             "androidtextcolorprimary" to (0xDE000000.toInt() to 0xFFFFFFFF.toInt()),
-            "androidtextcolorsecondary" to (0x8A000000.toInt() to 0xB3FFFFFF.toInt())
+            "androidtextcolorsecondary" to (0x8A000000.toInt() to 0xB3FFFFFF.toInt()),
+            "androidtextcolortertiary" to (0x61000000.toInt() to 0x8AFFFFFF.toInt()),
+            "androidtextcolorprimaryinverse" to (0xFFFFFFFF.toInt() to 0xFF000000.toInt()),
+            "androidtextcolorhint" to (0x61000000.toInt() to 0x8AFFFFFF.toInt())
         )
     }
 }

@@ -161,4 +161,49 @@ class XmlLayoutParserTest {
         }
         assertEquals(true, guardSeen)
     }
+
+    @Test
+    fun `databinding layout root is unwrapped to its first view child`() {
+        val xml = """
+            <layout xmlns:android="http://schemas.android.com/apk/res/android"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+                <data>
+                    <variable name="vm" type="com.example.MainViewModel"/>
+                    <import type="android.view.View"/>
+                </data>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+                    <TextView
+                        android:id="@+id/label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                </LinearLayout>
+            </layout>
+        """.trimIndent()
+
+        val root = parser.parse(xml, "bound.xml")
+
+        assertEquals("LinearLayout", root.tag)
+        assertNull(root.note)
+        assertEquals(1, root.children.size)
+        assertEquals("TextView", root.children[0].tag)
+        assertEquals("label", root.children[0].idName)
+    }
+
+    @Test
+    fun `databinding layout without a view root degrades to an empty placeholder`() {
+        val xml = """
+            <layout xmlns:android="http://schemas.android.com/apk/res/android">
+                <data>
+                    <variable name="x" type="String"/>
+                </data>
+            </layout>
+        """.trimIndent()
+
+        val root = parser.parse(xml, "bound-empty.xml")
+
+        assertEquals("empty", root.tag)
+        assertNotNull(root.note)
+    }
 }

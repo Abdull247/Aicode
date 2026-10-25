@@ -10,6 +10,7 @@ import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AutoCompleteTextView
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.CheckedTextView
@@ -20,15 +21,23 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.MultiAutoCompleteTextView
 import android.widget.ProgressBar
 import android.widget.RadioButton
+import android.widget.RatingBar
 import android.widget.RelativeLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Space
+import android.widget.Spinner
 import android.widget.Switch
+import android.widget.TableLayout
+import android.widget.TableRow
 import android.widget.TextView
 import android.widget.Toolbar
+import android.widget.ViewAnimator
+import android.widget.ViewFlipper
+import android.widget.ViewSwitcher
 import com.aicode.feature.workspace.domain.FileAccessProvider
 
 /**
@@ -244,7 +253,12 @@ class XmlViewRenderer(
                 if (mapped == null) {
                     TagMapping(null, simple)
                 } else {
-                    warnings.add("$simple is rendered as a lookalike framework widget")
+                    when (simple) {
+                        "ConstraintLayout" -> warnings.add(
+                            "ConstraintLayout rendered as RelativeLayout; parent and sibling constraints are translated, chains and behaviors are approximated"
+                        )
+                        else -> warnings.add("$simple is rendered as a lookalike framework widget")
+                    }
                     TagMapping(mapped, null)
                 }
             }
@@ -261,22 +275,65 @@ class XmlViewRenderer(
     }
 
     private fun buildView(node: LayoutNode): View? {
+        if (node.tag.substringAfterLast('.') in IGNORED_TAGS) return null
         val mapping = mapTag(node.tag)
-        if (mapping.simple == null) return placeholder(node, mapping.placeholderLabel ?: node.tag)
-        val view = try {
-            instantiate(mapping.simple)
-        } catch (e: Exception) {
-            warnings.add("Cannot instantiate ${node.tag}: ${e.message}")
-            return placeholder(node, mapping.placeholderLabel ?: node.tag)
-        }
         val attrs = effectiveAttrs(node)
-        applyCommon(view, attrs)
-        applyTyped(view, node.tag, attrs)
-        if (view is ViewGroup) {
-            for (child in node.children) attach(view, child, topLevel = false)
+        val view: View = if (mapping.simple != null) {
+            val built = try {
+                instantiate(mapping.simple)
+            } catch (e: Exception) {
+                warnings.add("Cannot instantiate ${node.tag}: ${e.message}")
+                return placeholder(node, mapping.placeholderLabel ?: node.tag)
+            }
+            applyCommon(built, attrs)
+            applyTyped(built, node.tag, attrs)
+            built
+        } else {
+            val custom = runCatching { customView(node, mapping.placeholderLabel ?: node.tag, attrs) }
+                .getOrElse {
+                    warnings.add("Custom widget failed: ${node.tag}: ${it.message}")
+                    null
+                }
+            custom ?: return placeholder(node, mapping.placeholderLabel ?: node.tag)
+            applyCommon(custom, attrs)
+            custom
         }
+        attachChildren(view, node)
         node.note?.let { warnings.add(it) }
         return view
+    }
+
+    /**
+     * Attaches a node's children to a freshly built container. When the container stands
+     * in for a ConstraintLayout, sibling/parent constraint attributes are translated into
+     * RelativeLayout rules beforehand ([ConstraintApprox]); Guideline children vanish,
+     * mirroring their invisible real counterparts.
+     */
+    private fun attachChildren(container: View, node: LayoutNode) {
+        if (container !is ViewGroup) return
+        val fromConstraintLayout = node.tag.substringAfterLast('.') == "ConstraintLayout"
+        for (child in node.children) {
+            if (fromConstraintLayout && !IGNORED_TAGS.contains(child.tag.substringAfterLast('.'))) {
+                translateConstraints(child)
+            }
+            attach(container, child, topLevel = false)
+        }
+    }
+
+    /** Merges ConstraintApprox rules into a child node's attrs and collects the notes. */
+    private fun translateConstraints(child: LayoutNode) {
+        if (!ConstraintApprox.isConstrained(child.attrs)) return
+        val result = ConstraintApprox.translate(child.attrs)
+        child.attrs = child.attrs + result.rules
+        for (note in result.notes) {
+            warnings.add(child.idName?.let { "Constraint #$it: $note" } ?: "Constraint on ${child.tag}: $note")
+        }
+    }
+
+    private fun attach(parent: ViewGroup, node: LayoutNode, topLevel: Boolean) {
+        val view = buildView(node) ?: return
+        view.layoutParams = makeLayoutArgs(parent, effectiveAttrs(node), topLevel)
+        parent.addView(view)
     }
 
     private fun instantiate(simpleName: String): View = when (simpleName) {
@@ -291,7 +348,13 @@ class XmlViewRenderer(
         "CheckedTextView" -> CheckedTextView(themedContext)
         "ProgressBar" -> ProgressBar(themedContext)
         "SeekBar" -> SeekBar(themedContext)
+        "RatingBar" -> RatingBar(themedContext)
+        "Spinner" -> Spinner(themedContext)
+        "AutoCompleteTextView" -> AutoCompleteTextView(themedContext)
+        "MultiAutoCompleteTextView" -> MultiAutoCompleteTextView(themedContext)
         "LinearLayout" -> LinearLayout(themedContext)
+        "TableLayout" -> TableLayout(themedContext)
+        "TableRow" -> TableRow(themedContext)
         "FrameLayout" -> FrameLayout(themedContext)
         "RelativeLayout" -> RelativeLayout(themedContext)
         "GridLayout" -> GridLayout(themedContext)
@@ -300,6 +363,9 @@ class XmlViewRenderer(
         "Space" -> Space(themedContext)
         "View" -> View(themedContext)
         "Toolbar" -> Toolbar(themedContext)
+        "ViewFlipper" -> ViewFlipper(themedContext)
+        "ViewAnimator" -> ViewAnimator(themedContext)
+        "ViewSwitcher" -> ViewSwitcher(themedContext)
         else -> throw IllegalArgumentException("Tag not whitelisted: $simpleName")
     }
 
@@ -334,6 +400,256 @@ class XmlViewRenderer(
         return box
     }
 
+    // ---- Custom approximations (Material/library lookalikes) ------------------------
+
+    /**
+     * Hand-built approximations for Material/library widgets whose stock labeled
+     * placeholder would misrepresent the screen. Each builder answers for its app:*
+     * attributes; [buildView] applies common attributes and attaches children afterwards.
+     * Returns null when the widget has no tailored approximation (plain placeholder).
+     */
+    private fun customView(node: LayoutNode, label: String, attrs: Map<String, String>): View? =
+        when (label) {
+            "CardView", "MaterialCardView" -> cardView(attrs)
+            "FloatingActionButton" -> floatingActionButton(attrs)
+            "RecyclerView", "ListView", "GridView", "NavigationView" -> listSkeleton(label)
+            "TabLayout" -> tabBar(node, attrs)
+            "BottomNavigationView" -> bottomBar(attrs)
+            "TextInputLayout" -> textInputLayout(attrs)
+            "AppBarLayout" -> appBarLayout(attrs)
+            else -> null
+        }
+
+    private fun cardView(attrs: Map<String, String>): FrameLayout {
+        val card = FrameLayout(themedContext)
+        val radius = dimenFor(attrs["app:cardCornerRadius"]) ?: (2 * density).toInt()
+        val color = attrs["app:cardBackgroundColor"]?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { colorFor(it) }
+            ?: drawables.themeColor("?attr/colorSurface")
+            ?: (if (dark) SURFACE_DARK else SURFACE_LIGHT)
+        card.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius.toFloat()
+            setColor(color)
+        }
+        attrs["app:cardElevation"]?.let { dimenFor(it)?.toFloat()?.let { px -> card.elevation = px } }
+        if (paddingValue(attrs) == null) {
+            val base = dimenFor(attrs["app:contentPadding"])
+            val left = dimenFor(attrs["app:contentPaddingLeft"]) ?: base
+            val top = dimenFor(attrs["app:contentPaddingTop"]) ?: base
+            val right = dimenFor(attrs["app:contentPaddingRight"]) ?: base
+            val bottom = dimenFor(attrs["app:contentPaddingBottom"]) ?: base
+            if (left != null || top != null || right != null || bottom != null) {
+                card.setPadding(left ?: 0, top ?: 0, right ?: 0, bottom ?: 0)
+            }
+        }
+        return card
+    }
+
+    private fun floatingActionButton(attrs: Map<String, String>): FrameLayout {
+        val fab = FrameLayout(themedContext)
+        val px = ((if (attrs["app:fabSize"] == "mini") 40 else 56) * density).toInt()
+        fab.minimumWidth = px
+        fab.minimumHeight = px
+        fab.elevation = 8f * density
+        val color = attrs["app:backgroundTint"]?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { colorFor(it) }
+            ?: drawables.themeColor("?attr/colorAccent")
+            ?: FAB_ACCENT
+        fab.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+        }
+        val src = attrs["android:src"] ?: attrs["app:srcCompat"]
+        if (src != null) {
+            val icon = ImageView(themedContext)
+            drawableFor(src)?.let { icon.setImageDrawable(it) }
+            icon.setColorFilter(
+                attrs["app:tint"]?.let { colorFor(it) } ?: 0xFFFFFFFF.toInt()
+            )
+            fab.addView(
+                icon,
+                FrameLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt(), Gravity.CENTER)
+            )
+        }
+        return fab
+    }
+
+    /** Neutral sample-rows skeleton standing in for adapter-driven list containers. */
+    private fun listSkeleton(kind: String): FrameLayout {
+        warnings.add("$kind contents approximated with sample rows")
+        val host = FrameLayout(themedContext)
+        val column = LinearLayout(themedContext).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (8 * density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+        if (kind == "GridView") {
+            val tile = (64 * density).toInt()
+            val gap = (3 * density).toInt()
+            for (rowIndex in 0 until 3) {
+                val row = LinearLayout(themedContext).apply { orientation = LinearLayout.HORIZONTAL }
+                for (col in 0 until 2) {
+                    val lp = LinearLayout.LayoutParams(0, tile, 1f)
+                    lp.setMargins(gap, gap, gap, gap)
+                    row.addView(sampleTile(), lp)
+                }
+                column.addView(row)
+            }
+        } else {
+            val barHeight = ((if (kind == "NavigationView") 40 else 48) * density).toInt()
+            val gap = (3 * density).toInt()
+            for (i in 0 until 6) {
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, barHeight)
+                lp.setMargins(0, gap, 0, gap)
+                column.addView(sampleTile(), lp)
+            }
+        }
+        host.addView(
+            column,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        return host
+    }
+
+    /** Rounded neutral sample block; callers provide its LayoutParams. */
+    private fun sampleTile(): View {
+        val tile = View(themedContext)
+        tile.background = GradientDrawable().apply {
+            cornerRadius = 8 * density
+            setColor(if (dark) PLACEHOLDER_BG_DARK else PLACEHOLDER_BG_LIGHT)
+            setStroke((density * 0.5f).toInt().coerceAtLeast(1), PLACEHOLDER_STROKE)
+        }
+        return tile
+    }
+
+    private fun tabBar(node: LayoutNode, attrs: Map<String, String>): FrameLayout {
+        val host = FrameLayout(themedContext)
+        host.minimumHeight = (48 * density).toInt()
+        val row = LinearLayout(themedContext).apply { orientation = LinearLayout.HORIZONTAL }
+        val items = node.children.filter { it.tag.substringAfterLast('.') == "TabItem" }
+        val labels = items.mapNotNull { it.attrs["android:text"] }
+        val slots = if (labels.isNotEmpty()) labels else List(3) { null }
+        for (slot in slots) {
+            val tab = TextView(themedContext).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+                slot?.let { text = textFor(it) }
+                setTextColor(
+                    attrs["app:tabTextColor"]?.let { colorFor(it) }
+                        ?: drawables.themeColor("?attr/colorOnSurface")
+                        ?: TEXT_ON_SURFACE
+                )
+            }
+            row.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        }
+        host.addView(
+            row,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        val indicator = View(themedContext)
+        indicator.setBackgroundColor(
+            attrs["app:tabIndicatorColor"]?.let { colorFor(it) }
+                ?: drawables.themeColor("?attr/colorAccent")
+                ?: FAB_ACCENT
+        )
+        host.addView(
+            indicator,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (2 * density).toInt(),
+                Gravity.BOTTOM
+            )
+        )
+        return host
+    }
+
+    private fun bottomBar(attrs: Map<String, String>): FrameLayout {
+        val bar = FrameLayout(themedContext)
+        bar.minimumHeight = (56 * density).toInt()
+        bar.setBackgroundColor(
+            attrs["android:background"]?.let { colorFor(it)?.takeIf { c -> c != 0 } }
+                ?: drawables.themeColor("?attr/colorSurface")
+                ?: (if (dark) SURFACE_DARK else SURFACE_LIGHT)
+        )
+        val row = LinearLayout(themedContext).apply { orientation = LinearLayout.HORIZONTAL }
+        val iconSize = (24 * density).toInt()
+        for (i in 0 until 3) {
+            val slot = FrameLayout(themedContext)
+            slot.addView(
+                bottomNavIcon(iconSize),
+                FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
+            )
+            row.addView(slot, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        }
+        bar.addView(
+            row,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        return bar
+    }
+
+    /** Bottom-nav sample icon: filled circle tinted like an inactive item. */
+    private fun bottomNavIcon(size: Int): View {
+        val icon = View(themedContext)
+        icon.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(
+                drawables.themeColor("?attr/colorOnSurfaceVariant")
+                    ?: (if (dark) 0x66FFFFFF.toInt() else 0x66000000.toInt())
+            )
+        }
+        return icon
+    }
+
+    private fun textInputLayout(attrs: Map<String, String>): LinearLayout {
+        val box = LinearLayout(themedContext).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (12 * density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+        box.background = GradientDrawable().apply {
+            cornerRadius = 4 * density
+            setColor(if (dark) PLACEHOLDER_BG_DARK else PLACEHOLDER_BG_LIGHT)
+            setStroke((density).toInt().coerceAtLeast(1), PLACEHOLDER_STROKE)
+        }
+        val hint = attrs["android:hint"]?.takeIf { it.isNotBlank() }
+        if (hint != null) {
+            val label = TextView(themedContext).apply {
+                textSize = 11f
+                text = textFor(hint)
+                setTextColor(
+                    attrs["android:textColorHint"]?.let { colorFor(it) }
+                        ?: drawables.themeColor("?attr/colorOnSurfaceVariant")
+                        ?: (if (dark) 0xB3FFFFFF.toInt() else 0x8A000000.toInt())
+                )
+            }
+            box.addView(label)
+            box.addView(View(themedContext), LinearLayout.LayoutParams(0, (4 * density).toInt()))
+        }
+        return box
+    }
+
+    private fun appBarLayout(attrs: Map<String, String>): LinearLayout {
+        val bar = LinearLayout(themedContext).apply { orientation = LinearLayout.VERTICAL }
+        bar.setBackgroundColor(
+            attrs["android:background"]?.let { colorFor(it)?.takeIf { c -> c != 0 } }
+                ?: drawables.themeColor("?attr/colorPrimary")
+                ?: 0xFF3F51B5.toInt()
+        )
+        bar.elevation = 4f * density
+        return bar
+    }
+
     // ---- Attribute application ----------------------------------------------------
 
     private fun applyCommon(view: View, attrs: Map<String, String>) {
@@ -352,6 +668,18 @@ class XmlViewRenderer(
                 warnings.add("Background not resolved: $token")
             }
         }
+        attrs["android:backgroundTint"]?.let { token ->
+            colorFor(token)?.let { c ->
+                view.backgroundTintList = android.content.res.ColorStateList.valueOf(c)
+            } ?: warnings.add("Background tint not resolved: $token")
+        }
+        // Since API 23 every View carries a foreground; snippets commonly use it for
+        // overlays and touch ripples.
+        attrs["android:foreground"]?.let { token ->
+            drawableFor(token)?.let { view.foreground = it }
+                ?: warnings.add("Foreground not resolved: $token")
+        }
+        attrs["android:foregroundGravity"]?.let { view.foregroundGravity = ResourceValues.parseGravity(it) }
 
         when (attrs["android:visibility"]) {
             "gone" -> view.visibility = View.GONE
@@ -360,9 +688,19 @@ class XmlViewRenderer(
         attrs["android:alpha"]?.toFloatOrNull()?.let { view.alpha = it }
         attrs["android:elevation"]?.let { dimenFor(it)?.toFloat()?.let { px -> view.elevation = px } }
         attrs["android:rotation"]?.toFloatOrNull()?.let { view.rotation = it }
+        attrs["android:rotationX"]?.toFloatOrNull()?.let { view.rotationX = it }
+        attrs["android:rotationY"]?.toFloatOrNull()?.let { view.rotationY = it }
+        attrs["android:scaleX"]?.toFloatOrNull()?.let { view.scaleX = it }
+        attrs["android:scaleY"]?.toFloatOrNull()?.let { view.scaleY = it }
+        attrs["android:translationX"]?.let { dimenFor(it)?.toFloat()?.let { px -> view.translationX = px } }
+        attrs["android:translationY"]?.let { dimenFor(it)?.toFloat()?.let { px -> view.translationY = px } }
+        attrs["android:translationZ"]?.let { dimenFor(it)?.toFloat()?.let { px -> view.translationZ = px } }
         attrs["android:enabled"]?.let { view.isEnabled = it.toBoolean() }
         attrs["android:minimumWidth"]?.let { dimenFor(it)?.let { v -> view.minimumWidth = v } }
         attrs["android:minimumHeight"]?.let { dimenFor(it)?.let { v -> view.minimumHeight = v } }
+        if (view is ViewGroup) {
+            attrs["android:clipToPadding"]?.toBoolean()?.let { view.clipToPadding = it }
+        }
     }
 
     private fun paddingValue(attrs: Map<String, String>): IntArray? {
@@ -442,6 +780,24 @@ class XmlViewRenderer(
             get("android:letterSpacing")?.toFloatOrNull()?.let { view.letterSpacing = it }
             get("android:textAllCaps")?.toBoolean()?.let { view.isAllCaps = it }
             get("android:drawablePadding")?.let { dimenFor(it)?.let { px -> view.compoundDrawablePadding = px } }
+            get("android:shadowColor")?.let { colorFor(it)?.let { c ->
+                val radius = get("android:shadowRadius")?.toFloatOrNull() ?: 0f
+                val dx = get("android:shadowDx")?.toFloatOrNull() ?: 0f
+                val dy = get("android:shadowDy")?.toFloatOrNull() ?: 0f
+                view.setShadowLayer(radius * density, dx * density, dy * density, c)
+            } }
+            val lineExtra = get("android:lineSpacingExtra")?.let { dimenFor(it)?.toFloat() }
+            val lineMult = get("android:lineSpacingMultiplier")?.toFloatOrNull()
+            if (lineExtra != null || lineMult != null) {
+                view.setLineSpacing(lineExtra ?: view.lineSpacingExtra, lineMult ?: view.lineSpacingMultiplier)
+            }
+            get("android:includeFontPadding")?.toBoolean()?.let { view.includeFontPadding = it }
+            get("android:textColorHighlight")?.let { colorFor(it)?.let { c -> view.highlightColor = c } }
+            get("android:fontFamily")?.let { family ->
+                val style = (if (get("android:textStyle")?.contains("bold") == true) Typeface.BOLD else 0) or
+                        (if (get("android:textStyle")?.contains("italic") == true) Typeface.ITALIC else 0)
+                view.typeface = Typeface.create(family, style)
+            }
             // Compound drawables: prefer start/end, fall back to the directional pair.
             val start = drawableFor(get("android:drawableStart") ?: get("android:drawableLeft"))
             val end = drawableFor(get("android:drawableEnd") ?: get("android:drawableRight"))
@@ -457,19 +813,46 @@ class XmlViewRenderer(
         if (view is EditText) {
             get("android:inputType")?.let { type -> view.inputType = inputTypeFor(type) }
             get("android:imeOptions")?.let { options -> view.imeOptions = imeOptionsFor(options) }
+            get("android:maxLength")?.toIntOrNull()?.let { max ->
+                view.filters = arrayOf(android.text.InputFilter.LengthFilter(max))
+            }
         }
 
         if (view is android.widget.CompoundButton) {
             get("android:checked")?.toBoolean()?.let { view.isChecked = it }
+            get("android:buttonTint")?.let { colorFor(it)?.let { c ->
+                view.buttonTintList = android.content.res.ColorStateList.valueOf(c)
+            } }
+            if (view is Switch) {
+                get("android:thumbTint")?.let { colorFor(it)?.let { c -> view.thumbTintList = android.content.res.ColorStateList.valueOf(c) } }
+                get("android:trackTint")?.let { colorFor(it)?.let { c -> view.trackTintList = android.content.res.ColorStateList.valueOf(c) } }
+            }
         }
         if (view is CheckedTextView) {
             get("android:checked")?.toBoolean()?.let { view.isChecked = it }
+            get("android:checkMark")?.let { drawableFor(it)?.let { d -> view.checkMarkDrawable = d } }
+            get("android:checkMarkTint")?.let { colorFor(it)?.let { c ->
+                view.checkMarkTintList = android.content.res.ColorStateList.valueOf(c)
+            } }
         }
 
         if (view is ImageView) {
-            get("android:src")?.let { token ->
-                drawableFor(token)?.let { view.setImageDrawable(it) }
-                    ?: colorFor(token)?.let { view.setColorFilter(it) }
+            // AppCompat widgets carry their source in app:srcCompat; android:src wins.
+            val srcToken = get("android:src") ?: get("app:srcCompat")
+            srcToken?.let { token ->
+                when {
+                    drawableFor(token) != null -> view.setImageDrawable(drawableFor(token))
+                    colorFor(token) != null -> {
+                        // Color sources draw as a filled rectangle with no intrinsic bounds.
+                        view.setImageDrawable(
+                            android.graphics.drawable.ColorDrawable(colorFor(token)!!)
+                        )
+                        if (get("android:scaleType") == null) {
+                            view.scaleType = ImageView.ScaleType.FIT_XY
+                        }
+                    }
+                    else -> warnings.add("Src not resolved: $token")
+                }
             }
             get("android:scaleType")?.let { value ->
                 view.scaleType = when (value) {
@@ -483,7 +866,8 @@ class XmlViewRenderer(
                     else -> ImageView.ScaleType.FIT_CENTER
                 }
             }
-            get("android:tint")?.let { colorFor(it)?.let { c -> view.setColorFilter(c) } }
+            val tintToken = get("android:tint") ?: get("app:tint")
+            tintToken?.let { colorFor(it)?.let { c -> view.setColorFilter(c) } }
             get("android:adjustViewBounds")?.toBoolean()?.let { view.adjustViewBounds = it }
             get("android:cropToPadding")?.toBoolean()?.let { view.cropToPadding = it }
             get("android:maxWidth")?.let { dimenFor(it)?.let { v -> view.maxWidth = v } }
@@ -493,7 +877,30 @@ class XmlViewRenderer(
         if (view is ProgressBar) {
             get("android:max")?.toIntOrNull()?.let { view.max = it }
             get("android:progress")?.toIntOrNull()?.let { view.progress = it }
+            get("android:secondaryProgress")?.toIntOrNull()?.let { view.secondaryProgress = it }
             get("android:indeterminate")?.toBoolean()?.let { view.isIndeterminate = it }
+            get("android:progressTint")?.let { colorFor(it)?.let { c -> view.progressTintList = android.content.res.ColorStateList.valueOf(c) } }
+            get("android:progressBackgroundTint")?.let { colorFor(it)?.let { c -> view.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(c) } }
+            get("android:secondaryProgressTint")?.let { colorFor(it)?.let { c -> view.secondaryProgressTintList = android.content.res.ColorStateList.valueOf(c) } }
+            get("android:indeterminateTint")?.let { colorFor(it)?.let { c -> view.indeterminateTintList = android.content.res.ColorStateList.valueOf(c) } }
+            if (view is SeekBar) {
+                get("android:thumb")?.let { drawableFor(it)?.let { d -> view.thumb = d } }
+                get("android:thumbTint")?.let { colorFor(it)?.let { c -> view.thumbTintList = android.content.res.ColorStateList.valueOf(c) } }
+            }
+        }
+
+        if (view is RatingBar) {
+            get("android:numStars")?.toIntOrNull()?.let { view.numStars = it }
+            get("android:rating")?.toFloatOrNull()?.let { view.rating = it }
+            get("android:stepSize")?.toFloatOrNull()?.let { view.stepSize = it }
+            get("android:isIndicator")?.toBoolean()?.let { view.setIsIndicator(it) }
+        }
+
+        if (view is Spinner) {
+            get("android:gravity")?.let { view.gravity = ResourceValues.parseGravity(it) }
+            if (get("android:popupBackground") != null) {
+                warnings.add("Spinner popup background not previewed")
+            }
         }
 
         if (view is LinearLayout) {
@@ -506,6 +913,26 @@ class XmlViewRenderer(
             }
             get("android:gravity")?.let { view.gravity = ResourceValues.parseGravity(it) }
             get("android:weightSum")?.toFloatOrNull()?.let { view.weightSum = it }
+            get("android:baselineAligned")?.toBoolean()?.let { view.isBaselineAligned = it }
+            get("android:measureWithLargestChild")?.toBoolean()?.let { view.isMeasureWithLargestChildEnabled = it }
+            get("android:divider")?.let { drawableFor(it)?.let { d -> view.dividerDrawable = d } }
+            get("android:showDividers")?.let { value ->
+                var mode = 0
+                for (part in value.split('|').map { it.trim() }) {
+                    when (part) {
+                        "beginning" -> mode = mode or LinearLayout.SHOW_DIVIDER_BEGINNING
+                        "middle" -> mode = mode or LinearLayout.SHOW_DIVIDER_MIDDLE
+                        "end" -> mode = mode or LinearLayout.SHOW_DIVIDER_END
+                    }
+                }
+                view.showDividers = mode
+            }
+            get("android:dividerPadding")?.let { dimenFor(it)?.let { px -> view.dividerPadding = px } }
+        }
+
+        if (view is TableLayout) {
+            get("android:shrinkAllColumns")?.toBoolean()?.let { view.setShrinkAllColumns(it) }
+            get("android:stretchAllColumns")?.toBoolean()?.let { view.setStretchAllColumns(it) }
         }
 
         if (view is GridLayout) {
@@ -527,6 +954,12 @@ class XmlViewRenderer(
         if (view is Toolbar) {
             get("android:title")?.let { textFor(it)?.let { t -> view.title = t } }
             get("android:subtitle")?.let { textFor(it)?.let { t -> view.subtitle = t } }
+            (get("android:navigationIcon") ?: get("app:navigationIcon"))?.let {
+                drawableFor(it)?.let { d -> view.navigationIcon = d }
+            }
+            get("android:logo")?.let { drawableFor(it)?.let { d -> view.logo = d } }
+            get("android:titleTextColor")?.let { colorFor(it)?.let { c -> view.setTitleTextColor(c) } }
+            get("android:subtitleTextColor")?.let { colorFor(it)?.let { c -> view.setSubtitleTextColor(c) } }
         }
     }
 
@@ -602,11 +1035,12 @@ class XmlViewRenderer(
 
         val layoutParams: ViewGroup.LayoutParams = when (parent) {
             is GridLayout -> GridLayout.LayoutParams(
-                GridLayout.spec(GridLayout.UNDEFINED),
-                GridLayout.spec(GridLayout.UNDEFINED)
+                gridSpec(attrs, "Row", horizontal = false),
+                gridSpec(attrs, "Column", horizontal = true)
             ).apply {
                 this.width = width
                 this.height = height
+                applyMargins(this, attrs)
             }
             is LinearLayout -> LinearLayout.LayoutParams(width, height).apply {
                 get("android:layout_weight")?.toFloatOrNull()?.let { weight = it }
@@ -624,6 +1058,29 @@ class XmlViewRenderer(
             else -> ViewGroup.MarginLayoutParams(width, height).apply { applyMargins(this, attrs) }
         }
         return layoutParams
+    }
+
+    /**
+     * GridLayout child spec honoring layout_row/column, their *Span siblings and
+     * layout_gravity (alignment only). Undefined coordinates flow through the grid in
+     * declaration order, like Android's auto-indexing.
+     */
+    private fun gridSpec(attrs: Map<String, String>, axis: String, horizontal: Boolean): GridLayout.Spec {
+        fun intOf(name: String): Int? = attrs["android:layout_$name"]?.trim()?.toIntOrNull()
+        val start = intOf(axis)
+        val span = intOf(axis + "Span")
+        val gravity = attrs["android:layout_gravity"]
+            ?.let { ResourceValues.parseGravity(it) }
+            ?.takeIf { it != 0 }
+            ?.let { GridLayout.getAlignment(it, horizontal) }
+        return when {
+            gravity != null && span != null && start != null -> GridLayout.spec(start, span, gravity)
+            gravity != null && start != null -> GridLayout.spec(start, gravity)
+            gravity != null -> GridLayout.spec(GridLayout.UNDEFINED, gravity)
+            span != null && start != null -> GridLayout.spec(start, span)
+            start != null -> GridLayout.spec(start)
+            else -> GridLayout.spec(GridLayout.UNDEFINED)
+        }
     }
 
     private fun applyMargins(lp: ViewGroup.MarginLayoutParams, attrs: Map<String, String>) {
@@ -686,27 +1143,40 @@ class XmlViewRenderer(
         val PLACEHOLDER_STROKE = 0x33999999.toInt()
         val PLACEHOLDER_TEXT_LIGHT = 0xFF5F6368.toInt()
         val PLACEHOLDER_TEXT_DARK = 0xFF9AA0A6.toInt()
+        val SURFACE_LIGHT = 0xFFFFFFFF.toInt()
+        val SURFACE_DARK = 0xFF2A2C2F.toInt()
+        val TEXT_ON_SURFACE = 0xDE000000.toInt()
+        val FAB_ACCENT = 0xFFFF4081.toInt()
+
+        /** Semantic no-visual tags Android itself ignores during inflation. */
+        val IGNORED_TAGS = setOf("Guideline", "requestFocus")
 
         val DRAWABLE_ATTR_KEYS = setOf(
-            "android:background", "android:src", "android:foreground",
+            "android:background", "android:foreground", "android:src", "app:srcCompat",
             "android:drawableStart", "android:drawableLeft", "android:drawableTop",
             "android:drawableEnd", "android:drawableRight", "android:drawableBottom",
-            "android:thumb", "android:button"
+            "android:divider", "android:checkMark", "android:thumb", "android:button",
+            "android:navigationIcon", "app:navigationIcon", "android:logo"
         )
 
         val WHITELIST = setOf(
             "TextView", "EditText", "Button", "ImageView", "ImageButton", "CheckBox",
-            "RadioButton", "Switch", "CheckedTextView", "ProgressBar", "SeekBar",
-            "LinearLayout", "FrameLayout", "RelativeLayout", "GridLayout", "ScrollView",
-            "HorizontalScrollView", "Space", "View", "Toolbar"
+            "RadioButton", "Switch", "CheckedTextView", "ProgressBar", "SeekBar", "RatingBar",
+            "Spinner", "AutoCompleteTextView", "MultiAutoCompleteTextView",
+            "LinearLayout", "TableLayout", "TableRow", "FrameLayout", "RelativeLayout",
+            "GridLayout", "ScrollView", "HorizontalScrollView", "Space", "View",
+            "Toolbar", "ViewFlipper", "ViewAnimator", "ViewSwitcher"
         )
 
-        /** Support-library/Material tags -> lookalike framework widget (null = placeholder). */
+        /**
+         * Support-library/Material tags -> lookalike framework widget (null = custom
+         * approximation if one exists in [customView], otherwise labeled placeholder).
+         */
         val DEGRADED_MAP = mapOf(
-            "ConstraintLayout" to "FrameLayout",
+            "ConstraintLayout" to "RelativeLayout",
             "CoordinatorLayout" to "FrameLayout",
-            "CardView" to "FrameLayout",
-            "MaterialCardView" to "FrameLayout",
+            "CardView" to null,
+            "MaterialCardView" to null,
             "AppBarLayout" to null,
             "CollapsingToolbarLayout" to "FrameLayout",
             "RecyclerView" to null,
@@ -715,20 +1185,23 @@ class XmlViewRenderer(
             "NestedScrollView" to "ScrollView",
             "SwipeRefreshLayout" to "FrameLayout",
             "TabLayout" to null,
+            "TabItem" to null,
             "BottomNavigationView" to null,
             "NavigationView" to null,
             "DrawerLayout" to "FrameLayout",
-            "TextInputLayout" to "LinearLayout",
+            "LinearLayoutCompat" to "LinearLayout",
+            "TextInputLayout" to null,
             "TextInputEditText" to "EditText",
             "Chip" to "CheckBox",
             "ChipGroup" to "LinearLayout",
-            "FloatingActionButton" to "Button",
+            "FloatingActionButton" to null,
             "MaterialButton" to "Button",
             "MaterialTextView" to "TextView",
             "ShapeableImageView" to "ImageView",
             "WebView" to null,
             "ListView" to null,
             "GridView" to null,
+            "VideoView" to null,
             "SurfaceView" to null,
             "TextureView" to null,
             "ViewStub" to null

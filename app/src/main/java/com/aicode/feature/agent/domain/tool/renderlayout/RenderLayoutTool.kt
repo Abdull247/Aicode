@@ -38,7 +38,7 @@ class RenderLayoutTool @Inject constructor(
     override val name = "renderLayout"
 
     override val description get() =
-        "Render an Android XML layout (res/layout/*.xml) to a PNG preview shown in chat and saved under .aicode/previews/. Support is approximate: standard framework widgets (Text/EditText/Button/ImageView/layouts) render faithfully; custom views, fragments, ConstraintLayout rules and unsupported attributes become labeled placeholders. Use after writing or editing a layout so the user can see the current look."
+        "Render an Android XML layout (res/layout/*.xml) to a PNG preview shown in chat and saved under .aicode/previews/. Coverage is broad but approximate: standard framework widgets (Text/EditText/Button/ImageView/Spinner/RatingBar/TableLayout and all base layouts) render faithfully; Material cards, FABs, tab bars, bottom bars and list containers render as close lookalikes; ConstraintLayout parent and sibling constraints are translated into RelativeLayout rules; shapes, layer-lists, radial/sweep gradients, dashed strokes and Material theme colors are supported. Custom view classes, fragments, constraint chains/bias and a few exotic attributes become labeled placeholders with warnings. Use after writing or editing a layout so the user can see the current look."
 
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
     override val permissionPolicy = ToolPermissionPolicy.AUTO_APPROVE
