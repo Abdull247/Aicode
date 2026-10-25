@@ -13,7 +13,7 @@ internal const val ARGUMENTS_PLACEHOLDER = "\$ARGUMENTS"
 internal fun substituteArguments(template: String, args: String): String = when {
     template.contains(ARGUMENTS_PLACEHOLDER) -> template.replace(ARGUMENTS_PLACEHOLDER, args)
     args.isBlank() -> template
-    else -> "$template\n\n用户附加输入：$args"
+    else -> "$template\n\nAdditional user input: $args"
 }
 
 /** 斜杠命令来源：内置命令（本地动作）或技能（把 SKILL.md 正文注入本轮）。 */

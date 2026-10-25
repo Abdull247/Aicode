@@ -2,14 +2,14 @@ name: Sync Models Metadata
 
 on:
   schedule:
-    # 每天 UTC 04:00 自动执行一次（对应北京时间 12:00）
+    # Runs automatically once a day at UTC 04:00 (noon Beijing time)
     - cron: '0 4 * * *'
-  workflow_dispatch: # 支持在 GitHub Actions 界面手动触发
+  workflow_dispatch: # can also be triggered manually from the GitHub Actions UI
 
 permissions:
   contents: write
 
-# 同一时刻只允许一次同步，避免两次运行撞车后互相覆盖 data 分支。
+# Allow only one sync at a time so concurrent runs cannot clobber each other on the data branch.
 concurrency:
   group: sync-models
   cancel-in-progress: false
@@ -37,24 +37,24 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 备份新生成的文件，随后清空工作区改用 orphan 单提交发布，避免机器产物污染 main。
+          # Back up the newly generated files, then clear the workspace and publish as an orphan single commit, keeping machine-generated output off main.
           cp data/models.json "$RUNNER_TEMP/models.json"
 
-          # 与 data 分支现存文件比对，无变化则跳过（避免无意义提交）。
+          # Compare against the data branch's existing files; skip when nothing changed (avoid no-op commits).
           git fetch origin data || true
           if git show origin/data:data/models.json > "$RUNNER_TEMP/models.old.json" 2>/dev/null; then
             if cmp -s "$RUNNER_TEMP/models.old.json" data/models.json; then
-              echo "模型元数据无变动，跳过提交"
+              echo "Model metadata unchanged; skipping commit"
               exit 0
             fi
           fi
 
-          # orphan 分支承载数据：每次覆盖成单个提交，data 分支始终只有最新快照。
+          # The orphan branch carries the data: it is overwritten into a single commit each run, so the data branch always holds only the latest snapshot.
           git checkout --orphan data-snapshot
           git rm -rf --cached . > /dev/null
           git clean -fdx > /dev/null
           mkdir -p data
           cp "$RUNNER_TEMP/models.json" data/models.json
           git add data/models.json
-          git commit -m "chore(data): 同步 models.dev 完整元数据"
+          git commit -m "chore(data): sync full models.dev metadata"
           git push -f origin HEAD:data

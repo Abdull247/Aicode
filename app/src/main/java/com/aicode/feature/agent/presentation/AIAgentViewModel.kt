@@ -551,7 +551,7 @@ class AIAgentViewModel @Inject constructor(
         val root = WorkspacePathMapper.CONTAINER_ROOT
         val rootEntries = listDirCached(root) ?: run {
             FileLogger.w(TAG, "列目录失败: $root")
-            return FileBrowseState.Error("无法读取工作区根目录")
+            return FileBrowseState.Error("Cannot read the workspace root directory")
         }
         val ignorePatterns = cachedRootGitignore(root)
         val rootExpanded = root in expanded
@@ -1350,7 +1350,7 @@ class AIAgentViewModel @Inject constructor(
      */
     private fun enqueueSubAgentNotification(event: SubAgentEvent) {
         viewModelScope.launch {
-            val title = sessionUseCase.getSessionById(event.subSessionId)?.title ?: "子代理"
+            val title = sessionUseCase.getSessionById(event.subSessionId)?.title ?: "Subagent"
             notifyParentSubAgentFinished(
                 parentSessionId = event.parentSessionId,
                 subSessionId = event.subSessionId,
@@ -1370,7 +1370,7 @@ class AIAgentViewModel @Inject constructor(
      * 与 [notifyParentSubAgentFinished] 同分发逻辑，方向相反。
      */
     private suspend fun deliverMessageToSubAgent(event: SubAgentEvent) {
-        val senderTitle = sessionUseCase.getSessionById(event.parentSessionId)?.title ?: "主会话"
+        val senderTitle = sessionUseCase.getSessionById(event.parentSessionId)?.title ?: "Parent session"
         deliverAgentMessage(
             recipientSessionId = event.subSessionId,
             senderSessionId = event.parentSessionId,
@@ -1382,7 +1382,7 @@ class AIAgentViewModel @Inject constructor(
 
     /** 子代理发给主会话的消息：同上，收件人为主会话。 */
     private suspend fun deliverMessageToParent(event: SubAgentEvent) {
-        val senderTitle = sessionUseCase.getSessionById(event.subSessionId)?.title ?: "子代理"
+        val senderTitle = sessionUseCase.getSessionById(event.subSessionId)?.title ?: "Subagent"
         deliverAgentMessage(
             recipientSessionId = event.parentSessionId,
             senderSessionId = event.subSessionId,
@@ -2107,7 +2107,7 @@ class AIAgentViewModel @Inject constructor(
                         subSessionId = sessionId,
                         title = sub.title,
                         outcome = NotificationOutcome.STOPPED,
-                        detail = "用户在界面上手动停止了这个子代理，任务未完成。"
+                        detail = "The user stopped this subagent from the UI; the task did not finish."
                     )
                 }
             }
@@ -2303,13 +2303,13 @@ class AIAgentViewModel @Inject constructor(
             val today = loadUsageSummary(todayStart)
             val allTime = loadUsageSummary(0L)
             val table = buildString {
-                appendLine("| 项目 | 今日 | 累计 |")
+                appendLine("| Item | Today | All time |")
                 appendLine("|---|---|---|")
-                appendLine("| 调用次数 | ${today.calls} | ${allTime.calls} |")
-                appendLine("| 输入 tokens | ${formatTokenCount(today.inputTokens)} | ${formatTokenCount(allTime.inputTokens)} |")
-                appendLine("| 输出 tokens | ${formatTokenCount(today.outputTokens)} | ${formatTokenCount(allTime.outputTokens)} |")
-                appendLine("| 缓存命中 tokens | ${formatTokenCount(today.cachedInputTokens)} | ${formatTokenCount(allTime.cachedInputTokens)} |")
-                appendLine("| 预估费用 | ${formatCostUsd(today.costUsd)} | ${formatCostUsd(allTime.costUsd)} |")
+                appendLine("| Calls | ${today.calls} | ${allTime.calls} |")
+                appendLine("| Input tokens | ${formatTokenCount(today.inputTokens)} | ${formatTokenCount(allTime.inputTokens)} |")
+                appendLine("| Output tokens | ${formatTokenCount(today.outputTokens)} | ${formatTokenCount(allTime.outputTokens)} |")
+                appendLine("| Cached input tokens | ${formatTokenCount(today.cachedInputTokens)} | ${formatTokenCount(allTime.cachedInputTokens)} |")
+                appendLine("| Est. cost | ${formatCostUsd(today.costUsd)} | ${formatCostUsd(allTime.costUsd)} |")
             }
             sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
             messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, table.trimEnd(), isContextExcluded = true)
@@ -2503,7 +2503,7 @@ class AIAgentViewModel @Inject constructor(
                 subSessionId = sub.id,
                 title = sub.title,
                 outcome = NotificationOutcome.STOPPED,
-                detail = "用户删除了这个子代理会话，任务未完成，其对话记录已不可读取。"
+                detail = "The user deleted this subagent session; the task did not finish and its conversation is no longer readable."
             )
         }
     }

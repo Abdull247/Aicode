@@ -31,8 +31,8 @@ internal fun CharSequence.isSalvageableAfterTruncation(): Boolean = isNotBlank()
 internal fun logStreamTruncated(provider: String, chars: Int, lines: Int) {
     FileLogger.w(
         TAG,
-        "$provider 流式响应在结束标记前断流：已收到 $lines 行 / $chars 字符，" +
-            "降级为截断输出（stopReason=$STREAM_TRUNCATED_STOP_REASON），由 Agent 循环自动续写"
+        "$provider stream dropped before its end marker: received $lines lines / $chars chars. " +
+            "Falling back to truncated output (stopReason=$STREAM_TRUNCATED_STOP_REASON); the agent loop will continue writing automatically"
     )
 }
 

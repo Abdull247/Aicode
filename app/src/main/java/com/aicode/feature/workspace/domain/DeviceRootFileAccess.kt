@@ -160,7 +160,7 @@ class DeviceRootFileAccess @Inject constructor(
             } catch (e: InterruptedException) {
                 -1
             }
-            if (timedOut.get()) throw IOException("root shell 执行超时（>${timeoutMs}ms）")
+            if (timedOut.get()) throw IOException("root shell execution timed out (>${timeoutMs}ms)")
             return ShResult(output.toString(Charsets.UTF_8.name()), exit, truncated)
         } finally {
             watchdog.interrupt()
@@ -175,10 +175,10 @@ class DeviceRootFileAccess @Inject constructor(
             2 -> throw NoSuchFileException(displayPath)
             3 -> throw FileAlreadyExistsException(displayPath)
             4 -> throw RemoteOutputTooLargeException(
-                "文件超过真机通道读取上限（${MAX_READ_BYTES / 1024 / 1024}MB）: $displayPath"
+                "File exceeds the device channel read limit (${MAX_READ_BYTES / 1024 / 1024}MB): $displayPath"
             )
-            5 -> throw IOException("写入校验失败（落盘长度不符）: $displayPath")
-            else -> throw IOException("root shell 失败(exit=$exitCode): ${output.take(300)}")
+            5 -> throw IOException("Write verification failed (length mismatch on disk): $displayPath")
+            else -> throw IOException("root shell failed (exit=$exitCode): ${output.take(300)}")
         }
     }
 
@@ -207,7 +207,7 @@ class DeviceRootFileAccess @Inject constructor(
         r.throwForError(path)
         val clean = r.output.filter { !it.isWhitespace() }
         return runCatching { Base64.decode(clean, Base64.DEFAULT) }
-            .getOrElse { throw IOException("base64 解码失败: $path (${it.message})") }
+            .getOrElse { throw IOException("base64 decoding failed: $path (${it.message})") }
     }
 
     /**
@@ -353,7 +353,7 @@ class DeviceRootFileAccess @Inject constructor(
     /** 写文件本体：base64 经 stdin 管道喂 `base64 -d`，落盘后 stat 校验长度（对齐 Local 的写后校验）。 */
     private fun writeBytesInternal(path: String, bytes: ByteArray, overwrite: Boolean) {
         if (bytes.size > MAX_WRITE_BYTES) {
-            throw IOException("写入内容超过真机通道上限（${MAX_WRITE_BYTES / 1024 / 1024}MB）: $path")
+            throw IOException("Write content exceeds the device channel limit (${MAX_WRITE_BYTES / 1024 / 1024}MB): $path")
         }
         val real = resolve(path)
         val script = buildString {
@@ -384,7 +384,7 @@ class DeviceRootFileAccess @Inject constructor(
             if (n < 0) break
             total += n
             if (total > MAX_WRITE_BYTES) {
-                throw IOException("写入内容超过真机通道上限（${MAX_WRITE_BYTES / 1024 / 1024}MB）: $path")
+                throw IOException("Write content exceeds the device channel limit (${MAX_WRITE_BYTES / 1024 / 1024}MB): $path")
             }
             acc.write(buf, 0, n)
         }

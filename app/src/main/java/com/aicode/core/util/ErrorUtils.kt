@@ -20,15 +20,15 @@ fun Throwable.toUserMessage(): String {
         current = current.cause
         depth++
     }
-    return parts.joinToString(" · ").ifBlank { "未知错误" }
+    return parts.joinToString(" · ").ifBlank { "Unknown error" }
 }
 
-/** 针对常见异常类型给出更友好的中文说明。 */
+/** Friendlier English copy for common exception types. */
 private fun friendlyName(t: Throwable): String = when (t) {
-    is java.net.UnknownHostException -> "无法连接服务器（DNS 解析失败，请检查网络或 Base URL）"
-    is java.net.SocketTimeoutException -> "请求超时（网络较慢或服务无响应）"
-    is java.net.ConnectException -> "连接被拒绝（请检查 Base URL 与端口）"
-    is javax.net.ssl.SSLException -> "SSL 连接失败"
-    is IOException -> "网络读写失败：${t.javaClass.simpleName}"
+    is java.net.UnknownHostException -> "Cannot reach server (DNS lookup failed; check the network or Base URL)"
+    is java.net.SocketTimeoutException -> "Request timed out (slow network or the service did not respond)"
+    is java.net.ConnectException -> "Connection refused (check the Base URL and port)"
+    is javax.net.ssl.SSLException -> "SSL connection failed"
+    is IOException -> "Network I/O failed: ${t.javaClass.simpleName}"
     else -> t.javaClass.simpleName
 }

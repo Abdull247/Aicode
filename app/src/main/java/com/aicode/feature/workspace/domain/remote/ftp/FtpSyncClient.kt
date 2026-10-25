@@ -116,7 +116,7 @@ class FtpSyncClient : RemoteSyncClient {
                 FileOutputStream(localFile).use { fos ->
                     val success = ftpClient.retrieveFile(remotePath, fos)
                     if (!success) {
-                        val detail = "FTP 下载失败: $remotePath, reply=${ftpClient.replyCode} ${ftpClient.replyString.trim()}"
+                        val detail = "FTP download failed: $remotePath, reply=${ftpClient.replyCode} ${ftpClient.replyString.trim()}"
                         if (FTPReply.isNegativePermanent(ftpClient.replyCode)) throw RemoteFileRejectedException(detail)
                         throw IOException(detail)
                     }
@@ -138,7 +138,7 @@ class FtpSyncClient : RemoteSyncClient {
                 FileInputStream(localFile).use { fis ->
                     val success = ftpClient.storeFile(remotePath, fis)
                     if (!success) {
-                        val detail = "FTP 上传失败: $remotePath, reply=${ftpClient.replyCode} ${ftpClient.replyString.trim()}"
+                        val detail = "FTP upload failed: $remotePath, reply=${ftpClient.replyCode} ${ftpClient.replyString.trim()}"
                         if (FTPReply.isNegativePermanent(ftpClient.replyCode)) throw RemoteFileRejectedException(detail)
                         throw IOException(detail)
                     }

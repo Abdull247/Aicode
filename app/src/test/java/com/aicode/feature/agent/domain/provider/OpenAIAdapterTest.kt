@@ -248,7 +248,7 @@ class OpenAIAdapterTest {
         val result = adapter(api).complete("", emptyList())
 
         assertTrue(result.content.contains("正文"))
-        assertTrue(result.content.contains("图片已省略"))
+        assertTrue(result.content.contains("Image omitted"))
         assertTrue(!result.content.contains("iVBORw0KGgo"))
     }
 

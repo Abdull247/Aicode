@@ -1,11 +1,11 @@
 name: Deploy Docs
 
-# 文档站只在打 tag 时部署，避免 main 上尚未随版本发布的文档被公开。
-# Vercel 的 Git 自动部署已在 docs-site/vercel.json 用 git.deploymentEnabled=false 关闭，
-# 生产部署统一由本工作流用 Vercel CLI 完成。
-# 前置配置（GitHub 仓库 Secret）：VERCEL_TOKEN、VERCEL_ORG_ID、VERCEL_PROJECT_ID
-# Vercel 项目需设置 Root Directory = docs-site。CLI 必须从仓库根运行（官方 monorepo 指南）：
-# 在子目录里跑 vercel 会读不到 docs-site/vercel.json，退回 VitePress preset 默认命令而报 vitepress not found。
+# Deploy the docs site only on tag pushes so docs not yet shipped with a release never go public from main.
+# Vercel's Git auto-deploy is disabled in docs-site/vercel.json via git.deploymentEnabled=false;
+# production deployments go through this workflow using the Vercel CLI.
+# Prerequisites (GitHub repo secrets): VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# The Vercel project must set Root Directory = docs-site. The CLI must run from the repo root (per the official monorepo guide):
+# running vercel inside a subdirectory misses docs-site/vercel.json and falls back to the VitePress preset default command, failing with "vitepress not found".
 on:
   push:
     tags:

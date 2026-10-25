@@ -55,7 +55,7 @@ class SshHostKeyPendingException(
     val keyType: String,
     val fingerprint: String,
     val changed: Boolean
-) : Exception("SSH 主机密钥需要确认: $host:$port")
+) : Exception("SSH host key requires confirmation: $host:$port")
 
 class SshHostKeyVerifier @Inject constructor(
     private val store: SshHostKeyStore

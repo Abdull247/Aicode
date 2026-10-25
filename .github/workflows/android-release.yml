@@ -1,15 +1,15 @@
 name: Android Release
 
-# 打 Tag（如 v1.0.0）时触发：构建三个签名 Release APK
-#   - universal : arm64-v8a + x86_64，含 arm + x86 两套容器镜像（通用，体积最大）
-#   - armsolo    : 仅 arm64-v8a，仅含 arm 镜像（真机首选，体积约为 universal 的一半）
-#   - x86solo    : 仅 x86_64，仅含 x86 镜像（x86 模拟器/Chromebook，体积约为 universal 的一半）
-# 创建 GitHub Release 并把三个 APK 作为资产发布。
+# Triggered on tag push (e.g. v1.0.0): build the three signed release APKs
+#   - universal : arm64-v8a + x86_64, with both arm and x86 container images (universal, largest)
+#   - armsolo    : arm64-v8a only, arm image only (preferred on real devices; roughly half of universal)
+#   - x86solo    : x86_64 only, x86 image only (x86 emulators/Chromebooks; roughly half of universal)
+# Creates a GitHub Release and publishes the three APKs as assets.
 on:
   push:
     tags:
       - 'v*'
-  # 允许在 Actions 页面手动触发，便于验证构建链路。
+  # Can be triggered manually from the Actions page to verify the build pipeline.
   workflow_dispatch:
 
 jobs:
@@ -17,14 +17,14 @@ jobs:
     name: Build & Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # 创建 Release 与上传资产需要写权限
+      contents: write   # write permission needed to create the Release and upload assets
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # versionCode 由 build.gradle.kts 的 gitCommitCount() 取 git rev-list --count HEAD，
-          # 浅克隆（默认 depth=1）会得到 1，必须拉完整历史，否则 Release APK 版本号错乱。
+          # versionCode comes from gitCommitCount() in build.gradle.kts, which reads `git rev-list --count HEAD`;
+          # a shallow clone (default depth=1) returns 1; full history is required or the release APK version numbering breaks.
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -33,12 +33,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # runner 预装的 Android SDK 只到 android-36，而 compileSdk 已升到 37
-      # （PrismalAGSL 的 aar-metadata 声明 minCompileSdk=37，AGP 强校验）。
-      # 缺平台时 Gradle 在解析依赖阶段就报
-      # "Failed to find Platform SDK with path: platforms;android-37"，构建根本进不到编译。
-      # 不用 android-actions/setup-android：它内部固定执行 `sdkmanager tools`，
-      # 而 runner 自带的 cmdline-tools 16 已移除 tools 包，必然 exit 1。
+      # The preinstalled Android SDK only goes up to android-36, but compileSdk is 37
+      # (PrismalAGSL's aar-metadata declares minCompileSdk=37 and AGP enforces it).
+      # When the platform is missing, Gradle fails at dependency resolution with
+      # "Failed to find Platform SDK with path: platforms;android-37" before compilation even starts.
+      # Avoid android-actions/setup-android: it hard-runs `sdkmanager tools`,
+      # but the runner's cmdline-tools 16 removed the tools package, so it always exits 1.
       - name: Install Android platform 37 & build-tools 36
         run: |
           set -e
@@ -51,14 +51,14 @@ jobs:
           echo "sdkmanager=$SM"
           if [ -z "$SM" ]; then echo "::error::sdkmanager not found"; exit 1; fi
           yes 2>/dev/null | "$SM" --sdk_root="$SDK" --install "build-tools;36.0.0"
-          # 远端已无 platforms;android-37（Android 17 平台更名 android-37.0/37.1/37.2），
-          # 本地开发机留有当年安装的官方 Platform 37 包（api-level=37 rev=2）。
-          # 任何"从 37.0 改元数据"的仿制品都过不了 AGP 校验：
-          #   package.xml path=37.0 -> inconsistent location，目录整体被忽略；
-          #   source.properties ApiLevel=37.0 -> 平台解析成 API 0；
-          #   两者都删 -> AGP 没有注册表可查，Failed to find Platform SDK。
-          # 该真包已作为 asset 附在 v1.0.1 Release（android-platform-37.zip），
-          # 直接下载解压，与本地可编译形态 1:1 一致。
+          # Google's remote no longer hosts platforms;android-37 (the Android 17 platform was renamed to android-37.0/37.1/37.2),
+          # while the local dev machine still has the original Platform 37 package (api-level=37 rev=2).
+          # Any knock-off "patched 37.0 metadata" package fails AGP's validation:
+          #   package.xml path=37.0 -> inconsistent location; the whole directory gets ignored;
+          #   source.properties ApiLevel=37.0 -> the platform resolves to API 0;
+          #   removing both -> AGP has no registry to consult and reports Failed to find Platform SDK.
+          # The genuine package is attached as an asset to the v1.0.1 Release (android-platform-37.zip);
+          # download and extract it directly; it is byte-identical to the locally compilable form.
           rm -rf "$SDK/platforms/android-37"
           curl -sSL --retry 3 -o /tmp/android-37.zip             "https://github.com/hwsyyds666/AiCode/releases/download/v1.0.1/android-platform-37.zip"
           unzip -q -o /tmp/android-37.zip -d "$SDK/platforms/"
@@ -70,24 +70,24 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # 复用 Gradle 构建缓存，加速后续构建。
+          # Reuse the Gradle build cache to speed up later builds.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      # 打印当前 Tag，Tag 驱动直接生成 versionName。
-      # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
+      # Print the current tag; the tag directly drives versionName.
+      # Validate only when triggered by a tag; skip on workflow_dispatch (manual, no tag).
       - name: Display release tag info
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -e
           tag_ver="${GITHUB_REF_NAME#v}"            # 1.7.0 / 1.7.0-rc1 / ...
           echo "tag version (without v) = $tag_ver"
-          echo "✓ tag 将直接驱动应用 versionName ($tag_ver)"
+          echo "✓ Tag will directly drive the app versionName ($tag_ver)"
 
-      # 校验 versionCode 单调递增：versionCode = git commit count，rebase/squash 改写历史
-      # 可能让 commit count 变小，导致新版本 versionCode < 旧版本、升级判定失效。
-      # 取按提交时间倒序最近的非当前 tag，算其 commit count，要求当前 HEAD 不小于上个 Release。
-      # 允许相等：rc 转正式版时常在同一提交上打 tag，versionCode 相等是正常的。
-      # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
+      # Verify versionCode monotonicity: versionCode = git commit count, and rebases/squashes rewriting history
+      # can shrink the count, making a new build's versionCode older than the previous one and breaking upgrade detection.
+      # Take the most recent tag (by commit time) that is not the current one, compute its commit count, and require HEAD's count to be no lower than the previous release.
+      # Equality is allowed: promoting an RC to stable often tags the same commit, so equal versionCode is normal.
+      # Validate only when triggered by a tag; skip on workflow_dispatch (manual, no tag).
       - name: Verify versionCode monotonic
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -95,23 +95,23 @@ jobs:
           cur_vc=$(git rev-list --count HEAD)
           prev_tag=$(git tag --sort=-creatordate | grep -vE "^${GITHUB_REF_NAME}$" | head -1)
           if [[ -z "$prev_tag" ]]; then
-            echo "无历史 tag，跳过 versionCode 单调校验（首次发版）"
-            echo "当前 versionCode(commit count) = $cur_vc"
+            echo "No previous tags; skipping versionCode monotonicity check (first release)"
+            echo "Current versionCode (commit count) = $cur_vc"
             exit 0
           fi
           prev_vc=$(git rev-list --count "$prev_tag")
-          echo "上个 Release($prev_tag) versionCode = $prev_vc"
-          echo "当前(${GITHUB_REF_NAME}) versionCode     = $cur_vc"
+          echo "Previous release ($prev_tag) versionCode = $prev_vc"
+          echo "Current (${GITHUB_REF_NAME}) versionCode = $cur_vc"
           if [[ "$cur_vc" -lt "$prev_vc" ]]; then
-            echo "::error::versionCode 回退: 当前 $cur_vc < 上个 Release($prev_tag) $prev_vc。通常因 rebase/squash 改写历史使 commit count 变小。请确保新版本在旧 tag 之上线性推进。"
+            echo "::error::versionCode regression: current $cur_vc < previous release ($prev_tag) $prev_vc. Usually caused by rebase/squash shrinking the commit count. Ensure new releases build linearly on top of the old tag."
             exit 1
           fi
-          echo "✓ versionCode 单调递增: $prev_vc -> $cur_vc"
+          echo "✓ versionCode monotonic: $prev_vc -> $cur_vc"
 
       - name: Restore release keystore
         env:
-          # keystore 文件以 base64 存入 Secret，避免二进制文件被破坏。
-          # 还原到 app/aicode.jks，与 build.gradle.kts 期望的位置一致。
+          # The keystore file is stored base64-encoded in a secret so the binary is not corrupted in transit.
+          # Restored to app/aicode.jks, matching the path build.gradle.kts expects.
           KEYSTORE_BASE64: ${{ secrets.AICODE_KEYSTORE_BASE64 }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > app/aicode.jks
@@ -134,29 +134,29 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 迁移版本号对账（发版前最后一道闸）：编号连续、SCHEMA_VERSION 一致、
-      # 已发布迁移未被篡改/复用。tag 是迁移版本号的分界线，发版前必须通过。
+      # Migration version reconciliation (the last gate before release): consecutive numbering, SCHEMA_VERSION in sync,
+      # published migrations untouched and not reused. Tags are the boundary for migration versions; this must pass before release.
       - name: Check migration versions
         run: python3 scripts/check_migrations.py
 
-      # 发版质量门禁：跑单元测试，失败即中止，避免发出回归包。
-      # 只跑 universal debug 变体：单测逻辑与 flavor 无关，跑全 flavor 6 变体是重复编译。
+      # Release quality gate: run unit tests and abort on failure so a regressed build never ships.
+      # Run only the universal debug variant: unit tests are flavor-independent, and all 6 flavor variants would just recompile.
       - name: Run unit tests
         run: ./gradlew :app:testUniversalDebugUnitTest
 
-      # 一次性构建全部 flavor 的 release APK（universal/armsolo/x86solo）
-      # --stacktrace：构建失败时输出完整调用栈，便于在 CI 定位 OOM/内存类根因。
+      # Build the release APKs for all flavors in one go (universal/armsolo/x86solo)
+      # --stacktrace: print the full stack on failure to help pinpoint OOM/memory-related root causes in CI.
       - name: Build all flavor Release APKs
         run: ./gradlew assembleRelease --stacktrace
 
-      # 给三个 APK 重命名为「包名-架构-版本」格式，架构用真实 ABI 名便于用户识别：
+      # Rename the three APKs to the <package>-<abi>-<version> scheme, using real ABI names so users can identify them:
       #   aicode-arm64-v1.0.0-rc1.apk      (armsolo)
       #   aicode-x86_64-v1.0.0-rc1.apk     (x86solo)
-      #   aicode-universal-v1.0.0-rc1.apk  (universal，含两套镜像)
+      #   aicode-universal-v1.0.0-rc1.apk  (universal, with both image sets)
       - name: Rename APKs by flavor
         run: |
           mkdir -p dist
-          ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
+          ver="${GITHUB_REF_NAME:-manual}"   # tag like v1.0.0-rc1; manual runs use manual-N
           declare -A abi=( [armsolo]=arm64 [x86solo]=x86_64 [universal]=universal )
           for f in universal armsolo x86solo; do
             src="app/build/outputs/apk/$f/release/app-$f-release.apk"
@@ -169,24 +169,24 @@ jobs:
             fi
           done
 
-          # 保留 R8 混淆映射（mapping.txt）到 dist/，随 Release 一起发布，供崩溃堆栈反混淆。
-          # 三个 flavor 共享同一份字节码与混淆结果，取 universal 一份即可；
-          # gzip 压缩后只有几 MB（原始约 90MB），retrace/Android Studio 解析前 gunzip 一下。
-          # 命名沿用 aicode-<abi>-<ver> 约定，看到崩溃报告里的版本号即可取对应 mapping。
-          # AGP 8.x 的 mapping 输出目录是 variant 驼峰名（flavor + BuildType），
-          # 即 outputs/mapping/universalRelease/，不是 outputs/mapping/universal/release/。
+          # Keep the R8 mapping (mapping.txt) in dist/ and publish it with the Release for de-obfuscating crash stacks.
+          # All three flavors share the same bytecode and obfuscation result, so universal's mapping suffices;
+          # gzipped it is only a few MB (about 90MB raw); gunzip before feeding it to retrace/Android Studio.
+          # Follows the aicode-<abi>-<ver> naming; grab the matching mapping by the version shown in the crash report.
+          # On AGP 8.x the mapping output directory uses the variant's camelCase name (flavor + BuildType),
+          # i.e. outputs/mapping/universalRelease/, not outputs/mapping/universal/release/.
           if [[ -f "app/build/outputs/mapping/universalRelease/mapping.txt" ]]; then
             gzip -c "app/build/outputs/mapping/universalRelease/mapping.txt" > "dist/aicode-universal-${ver}-mapping.txt.gz"
             echo "packaged aicode-universal-${ver}-mapping.txt.gz"
           else
-            echo "::warning::missing mapping.txt（R8 混淆映射）"
+            echo "::warning::missing mapping.txt (R8 mapping)"
           fi
           ls -lh dist/
 
       - name: Determine release name
         id: release
         run: |
-          # 手动触发（无 tag）时用 run id 作为临时名，避免破坏 tag 发布。
+          # On manual runs (no tag), use the run id as a temporary name to avoid disturbing tag releases.
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
@@ -199,45 +199,45 @@ jobs:
           tag="${{ steps.release.outputs.tag }}"
           if [[ "$tag" =~ -(rc|dev|beta|alpha)([.0-9]*)?$ ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "检测到预发布后缀，标记为 pre-release"
+            echo "Pre-release suffix detected; marking as pre-release"
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "正式版，不标记 pre-release"
+            echo "Stable release; not marked as pre-release"
           fi
 
-      # GitHub 的 generate_release_notes 只列 merged PR，直接 push 的 commit 不会出现。
-      # 本仓库在 main 上直接 commit，不走 PR 流程，所以手动用 git log 生成 changelog。
+      # GitHub's generate_release_notes only lists merged PRs; direct push commits never appear.
+      # This repo commits directly to main without PRs, so generate the changelog manually via git log.
       - name: Generate changelog from git log
         id: changelog
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cur_tag="${GITHUB_REF_NAME}"
-          # 正式版（vX.Y.Z 无后缀）从上一个正式版起算，包含整个发布周期（含全部 RC）的提交，
-          # 保证应用内检测更新能看到完整日志；RC/预发布从最近创建的 tag 起算（增量）。
+          # Stable releases (vX.Y.Z, no suffix) count from the previous stable, covering the whole release cycle (including all RCs),
+          # so the in-app update check shows the full log; RC/pre-releases count from the most recently created tag (incremental).
           if [[ "$cur_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             prev_tag=$(git tag --sort=-creatordate | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^${cur_tag}$" | head -1)
-            echo "正式版：从上一个正式版 ${prev_tag:-无} 起算 changelog（含全部 RC 提交）"
+            echo "Stable: changelog from previous stable ${prev_tag:-none} (includes all RC commits)"
           else
             prev_tag=$(git tag --sort=-creatordate | grep -vE "^${cur_tag}$" | head -1)
-            echo "预发布：从最近 tag ${prev_tag:-无} 起算 changelog"
+            echo "Pre-release: changelog from the latest tag ${prev_tag:-none}"
           fi
           if [[ -z "$prev_tag" ]]; then
-            echo "无历史 tag，列出最近 30 条提交"
+            echo "No previous tags; listing the last 30 commits"
             log=$(git log --oneline --no-decorate -30)
           else
-            echo "生成 ${prev_tag}..${cur_tag} 的 changelog"
+            echo "Generating changelog for ${prev_tag}..${cur_tag}"
             log=$(git log --oneline --no-decorate "${prev_tag}..HEAD")
           fi
-          # 转义为 GitHub Actions 输出（多行用 EOF 分隔符）
+          # Escape for GitHub Actions outputs (multi-line via an EOF delimiter)
           delimiter="EOF_$(date +%s)"
           echo "body<<${delimiter}" >> "$GITHUB_OUTPUT"
           echo "## What's Changed" >> "$GITHUB_OUTPUT"
           echo "" >> "$GITHUB_OUTPUT"
           if [[ -z "$log" ]]; then
-            echo "- 无新增提交（与上次发布同一提交）" >> "$GITHUB_OUTPUT"
+            echo "- No new commits (same commit as the previous release)" >> "$GITHUB_OUTPUT"
           else
             echo "$log" | while IFS= read -r line; do
-              # 提取 commit hash 和 message，格式化为列表项
+              # Extract commit hash and message, formatting them as list items
               sha=$(echo "$line" | cut -d' ' -f1)
               msg=$(echo "$line" | cut -d' ' -f2-)
               echo "- ${msg} (${sha})" >> "$GITHUB_OUTPUT"
@@ -254,13 +254,13 @@ jobs:
           name: Release ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
-          # 产物名约定 aicode-<abi>-<版本>.apk（见 Rename 步骤），故 glob 把 ABI 段放 aicode- 紧后、版本段用 * 兜底。
-          # 不要写成 aicode-*-<abi>.apk——那会把 abi 误放末段，与 aicode-<abi>-<ver> 永远匹配不上（rc3 翻车原因）。
+          # Artifacts follow the aicode-<abi>-<version>.apk naming (see the Rename step), so the glob puts the ABI segment right after aicode- with a trailing * for the version.
+          # Do NOT write aicode-*-<abi>.apk — that puts the ABI in the last segment and never matches aicode-<abi>-<ver> (the rc3 failure).
           files: |
             dist/aicode-universal-*.apk
             dist/aicode-arm64-*.apk
             dist/aicode-x86_64-*.apk
-            # R8 映射与 APK 同版本发布，反混淆崩溃报告的凭据（gzip 压缩，体积小）
+            # Publish the R8 mapping with the same version as the APK; the key to de-obfuscating crash reports (gzipped, small)
             dist/aicode-universal-*mapping.txt.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

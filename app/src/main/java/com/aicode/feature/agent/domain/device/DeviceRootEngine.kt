@@ -198,7 +198,7 @@ class DeviceRootEngine @Inject constructor(
                 emit(CommandEvent.Exit(null))
             } else {
                 FileLogger.e(TAG, "命令读输出异常(已保留此前输出): ${sanitizeCommandForLog(command)}", e)
-                emit(CommandEvent.Line("[命令执行异常：${e.message}]"))
+                emit(CommandEvent.Line("[Command execution error: ${e.message}]"))
                 emit(CommandEvent.Exit(null))
             }
         } finally {
@@ -330,7 +330,7 @@ class DeviceRootEngine @Inject constructor(
 
     /** 超时提示行（拼进输出，喂回模型/展示给用户）。 */
     private fun timeoutNotice(timeoutMs: Long): String =
-        "[命令执行超时：超过 ${timeoutMs}ms 已被强制终止]"
+        "[Command timed out after ${timeoutMs}ms and was forcibly terminated]"
 
     /**
      * 以 root 身份启动命令：`su -c '<command>'`；[projectPath] 非空时先 `cd` 进去。

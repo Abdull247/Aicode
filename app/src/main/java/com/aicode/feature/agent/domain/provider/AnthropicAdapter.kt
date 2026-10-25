@@ -230,7 +230,7 @@ class AnthropicAdapter @Inject constructor(
                         val line = reader.readLine()
                         if (line == null) {
                             if (!textBuilder.isSalvageableAfterTruncation()) {
-                                throw IOException("SSE 流被中断：未收到 message_stop 结束标记（疑似网络断开）")
+                                throw IOException("SSE stream interrupted: no message_stop terminator received (possible network drop)")
                             }
                             truncatedByNetwork = true
                             logStreamTruncated("Anthropic", textBuilder.length, sseLines)
@@ -251,7 +251,7 @@ class AnthropicAdapter @Inject constructor(
                                 "error" -> {
                                     val errObj = obj.getAsJsonObject("error")
                                     val code = errObj?.get("type")?.takeIf { !it.isJsonNull }?.asString
-                                    val msg = errObj?.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "未知错误"
+                                    val msg = errObj?.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "Unknown error"
                                     throw StreamApiException(code, msg)
                                 }
                                 "message_start" -> {

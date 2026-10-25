@@ -23,7 +23,7 @@ class StreamBudget(private val maxChars: Int = MAX_STREAM_CHARS) {
         if (total > maxChars) {
             throw StreamApiException(
                 code = "response_too_large",
-                message = "上游返回内容异常（单次响应超过 ${maxChars / 1024}KB），已中断"
+                message = "Upstream returned abnormal content (single response over ${maxChars / 1024}KB); aborted"
             )
         }
     }

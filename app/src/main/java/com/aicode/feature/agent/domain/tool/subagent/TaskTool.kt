@@ -76,43 +76,43 @@ class TaskTool @Inject constructor(
         }
     }
 
-    override val description = "管理子代理：创建、发消息、读取结果、停止、删除、列表。子代理拥有独立上下文与完整工具能力，可并行工作，最多同时运行 5 个。完成后会收到后台通知，不要轮询。用 send 可反复追加指令或对已完成子代理继续追问；子代理运行中也可能主动发消息。create 可用 agent 指定自定义子代理。"
+    override val description = "Manage subagents: create, send messages, read results, stop, delete, list. Subagents have independent context and full tools, can run in parallel, at most 5 at once. You are notified when they finish; do not poll. Use send to append instructions or follow up on a finished subagent; a running subagent may also message you. create can take agent to pick a custom subagent."
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "action" to ToolParameter(
             name = "action",
             type = ParameterType.STRING,
-            description = "操作类型：create（默认，创建子代理并执行任务）/ send（向子代理发一条消息，可反复发送）/ read（读取子代理的最后输出）/ stop（停止子代理的执行）/ del（删除子代理会话及其消息）/ list（列出当前会话的全部子代理）",
+            description = "Action: create (default, spawn a subagent and run a task) / send (message a subagent, repeatable) / read (last subagent output) / stop (stop execution) / del (delete the subagent session and its messages) / list (list all subagents of this session)",
             required = false
         ),
         "id" to ToolParameter(
             name = "id",
             type = ParameterType.STRING,
-            description = "子会话 id（read/send/stop/del 必填，取自 task 返回的 id）",
+            description = "Sub-session id (required for read/send/stop/del; from the id returned by task)",
             required = false
         ),
         "description" to ToolParameter(
             name = "description",
             type = ParameterType.STRING,
-            description = "子代理任务描述（create 用，作为子会话标题，如「修复登录 bug」）",
+            description = "Subagent task description (for create; used as the sub-session title, e.g. \"Fix login bug\")",
             required = false
         ),
         "prompt" to ToolParameter(
             name = "prompt",
             type = ParameterType.STRING,
-            description = "给子代理的完整指令（create 必填），将作为它的第一条用户消息；子代理看到的是全新上下文",
+            description = "Full instructions for the subagent (required for create); becomes its first user message. The subagent sees a fresh context.",
             required = false
         ),
         "agent" to ToolParameter(
             name = "agent",
             type = ParameterType.STRING,
-            description = "自定义子代理名（create 可选）：取系统提示词「可用子代理」清单中的名称，按其专属提示词、模型与工具集运行；省略则用继承本会话模型的默认通用子代理",
+            description = "Custom subagent name (optional for create): a name from the system prompt \"available subagents\" list, using its prompt, model, and tools. Omit to use the default general subagent that inherits this session's model.",
             required = false
         ),
         "message" to ToolParameter(
             name = "message",
             type = ParameterType.STRING,
-            description = "发给子代理的消息正文（send 必填）。可反复调用；运行中的子代理会尽快收到，已完成的会被重新唤醒",
+            description = "Message body for the subagent (required for send). Repeatable; a running subagent receives it soon, a finished one is woken again.",
             required = false
         )
     )
@@ -126,32 +126,32 @@ class TaskTool @Inject constructor(
             "stop" -> stopSubagent(args, context)
             "del" -> deleteSubagent(args, context)
             "list" -> listSubagents(context)
-            else -> ToolResult.Error("未知的 action：$action，支持：create / send / read / stop / del / list", "INVALID_ARGS")
+            else -> ToolResult.Error("Unknown action: $action; supported: create / send / read / stop / del / list", "INVALID_ARGS")
         }
     }
 
     /** 创建子代理并启动执行。 */
     private suspend fun createSubagent(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
-        val parentSessionId = context.sessionId ?: return ToolResult.Error("缺少会话上下文", "NO_SESSION")
+        val parentSessionId = context.sessionId ?: return ToolResult.Error("Missing session context", "NO_SESSION")
         val parentSession = sessionUseCase.getSessionById(parentSessionId)
-            ?: return ToolResult.Error("当前会话不存在", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Current session not found", "SESSION_NOT_FOUND")
 
-        // 检查并发上限
+        // Check concurrency cap
         if (eventBus.isFull) {
             return ToolResult.Error(
-                "子代理已达上限（最多 ${SubAgentEventBus.MAX_RUNNING} 个同时运行），请先等待其中某个完成或用 stop 停止后再创建",
+                "Subagent limit reached (at most ${SubAgentEventBus.MAX_RUNNING} running). Wait for one to finish or stop it before creating another",
                 "MAX_SUBAGENTS_REACHED"
             )
         }
 
         val prompt = (args["prompt"] as? JsonPrimitive)?.contentOrNull?.trim()
         if (prompt.isNullOrBlank()) {
-            return ToolResult.Error("参数无效：prompt 不能为空", "INVALID_ARGS")
+            return ToolResult.Error("Invalid parameter: prompt cannot be empty", "INVALID_ARGS")
         }
         val description = (args["description"] as? JsonPrimitive)?.contentOrNull?.trim()
             ?.replace(Regex("\\s+"), " ")
             ?.take(TASK_DESCRIPTION_MAX)
-            ?: "子代理任务"
+            ?: "Subagent task"
 
         // 指定 agent 时必须能找到定义：写错名字就报错并列出可用名，不静默回退成通用子代理，
         // 否则会拿着错的工具集与提示词跑完整个任务。
@@ -161,8 +161,8 @@ class TaskTool @Inject constructor(
             definition = agentDefinitionRepository.find(agentName)
             if (definition == null) {
                 val available = agentDefinitionRepository.listEnabled().map { it.definition.name }
-                val hint = if (available.isEmpty()) "当前未定义任何自定义子代理" else "可用：${available.joinToString(", ")}"
-                return ToolResult.Error("子代理定义不存在：$agentName（$hint）", "AGENT_NOT_FOUND")
+                val hint = if (available.isEmpty()) "no custom subagents defined" else "available: ${available.joinToString(", ")}"
+                return ToolResult.Error("Subagent definition not found: $agentName ($hint)", "AGENT_NOT_FOUND")
             }
         }
 
@@ -191,14 +191,14 @@ class TaskTool @Inject constructor(
                 detail = prompt
             )
         )
-        FileLogger.i(TAG, "子代理已创建: session=$subSessionId parent=$parentSessionId agent=${definition?.name ?: "-"}")
+        FileLogger.i(TAG, "subagent created: session=$subSessionId parent=$parentSessionId agent=${definition?.name ?: "-"}")
 
         return ToolResult.Success(
             buildJsonObject {
                 put("id", subSessionId)
                 put("state", "running")
                 definition?.let { put("agent", it.name) }
-                put("message", "子代理已创建并开始执行，任务完成后会收到通知。可用 task(action=\"read\", id=...) 读取输出，task(action=\"stop\", id=...) 主动关闭。")
+                put("message", "Subagent created and started. You will be notified when it finishes. Use task(action=\"read\", id=...) to read output, task(action=\"stop\", id=...) to stop it.")
             }
         )
     }
@@ -210,19 +210,19 @@ class TaskTool @Inject constructor(
      * 已完成的子代理则被重新唤醒并起新一轮。不在工具层直接投递，以复用同一套忙碌/空闲分发逻辑。
      */
     private suspend fun sendToSubagent(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
-        val parentSessionId = context.sessionId ?: return ToolResult.Error("缺少会话上下文", "NO_SESSION")
+        val parentSessionId = context.sessionId ?: return ToolResult.Error("Missing session context", "NO_SESSION")
         val subSessionId = (args["id"] as? JsonPrimitive)?.contentOrNull?.trim()
         if (subSessionId.isNullOrBlank()) {
-            return ToolResult.Error("参数无效：id 不能为空", "INVALID_ARGS")
+            return ToolResult.Error("Invalid parameter: id cannot be empty", "INVALID_ARGS")
         }
         val message = (args["message"] as? JsonPrimitive)?.contentOrNull?.trim()
         if (message.isNullOrBlank()) {
-            return ToolResult.Error("参数无效：message 不能为空", "INVALID_ARGS")
+            return ToolResult.Error("Invalid parameter: message cannot be empty", "INVALID_ARGS")
         }
         val sub = sessionUseCase.getSessionById(subSessionId)
-            ?: return ToolResult.Error("子会话不存在：$subSessionId", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Sub-session not found: $subSessionId", "SESSION_NOT_FOUND")
         if (sub.parentId != parentSessionId) {
-            return ToolResult.Error("只能向当前会话派生的子代理发消息", "NOT_YOUR_SUBAGENT")
+            return ToolResult.Error("Can only message subagents spawned by the current session", "NOT_YOUR_SUBAGENT")
         }
 
         eventBus.emit(
@@ -233,12 +233,12 @@ class TaskTool @Inject constructor(
                 detail = message
             )
         )
-        FileLogger.i(TAG, "向子代理发送消息: session=$subSessionId parent=$parentSessionId")
+        FileLogger.i(TAG, "sent message to subagent: session=$subSessionId parent=$parentSessionId")
         return ToolResult.Success(
             buildJsonObject {
                 put("id", subSessionId)
                 put("state", "delivered")
-                put("message", "消息已投递给子代理，运行中的将在下一批工具结果里收到，已完成的将被重新唤醒，可继续用 send 追加。")
+                put("message", "Message delivered to the subagent. A running one receives it with the next tool results; a finished one is woken again. You can keep using send.")
             }
         )
     }
@@ -257,12 +257,12 @@ class TaskTool @Inject constructor(
     private suspend fun readSubagent(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
         val subSessionId = (args["id"] as? JsonPrimitive)?.contentOrNull?.trim()
         if (subSessionId.isNullOrBlank()) {
-            return ToolResult.Error("参数无效：id 不能为空", "INVALID_ARGS")
+            return ToolResult.Error("Invalid parameter: id cannot be empty", "INVALID_ARGS")
         }
         val sub = sessionUseCase.getSessionById(subSessionId)
-            ?: return ToolResult.Error("子会话不存在：$subSessionId", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Sub-session not found: $subSessionId", "SESSION_NOT_FOUND")
         if (sub.parentId != context.sessionId) {
-            return ToolResult.Error("只能读取当前会话派生的子代理", "NOT_YOUR_SUBAGENT")
+            return ToolResult.Error("Can only read subagents spawned by the current session", "NOT_YOUR_SUBAGENT")
         }
 
         val messages = agentMessageDao.getMessagesBySessionOnce(subSessionId)
@@ -273,8 +273,8 @@ class TaskTool @Inject constructor(
         val fallback = messages.lastOrNull { it.role == MessageRole.USER.name }
         val content = when {
             lastAssistant != null -> lastAssistant.content
-            fallback != null -> "（子代理尚未回复）请求内容：${fallback.content.take(500)}"
-            else -> "（子代理会话为空）"
+            fallback != null -> "(Subagent has not replied yet) request: ${fallback.content.take(500)}"
+            else -> "(Subagent session is empty)"
         }
         val last = runCatching { messages.lastOrNull()?.timestamp ?: 0L }.getOrDefault(0L)
         return ToolResult.Success(
@@ -291,12 +291,12 @@ class TaskTool @Inject constructor(
     private suspend fun stopSubagent(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
         val subSessionId = (args["id"] as? JsonPrimitive)?.contentOrNull?.trim()
         if (subSessionId.isNullOrBlank()) {
-            return ToolResult.Error("参数无效：id 不能为空", "INVALID_ARGS")
+            return ToolResult.Error("Invalid parameter: id cannot be empty", "INVALID_ARGS")
         }
         val sub = sessionUseCase.getSessionById(subSessionId)
-            ?: return ToolResult.Error("子会话不存在：$subSessionId", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Sub-session not found: $subSessionId", "SESSION_NOT_FOUND")
         if (sub.parentId != context.sessionId) {
-            return ToolResult.Error("只能关闭当前会话派生的子代理", "NOT_YOUR_SUBAGENT")
+            return ToolResult.Error("Can only stop subagents spawned by the current session", "NOT_YOUR_SUBAGENT")
         }
 
         eventBus.emit(
@@ -310,7 +310,7 @@ class TaskTool @Inject constructor(
             buildJsonObject {
                 put("id", subSessionId)
                 put("state", "stopping")
-                put("message", "已请求停止子代理，正在取消其 AI 任务。")
+                put("message", "Stop requested; cancelling the subagent's AI task.")
             }
         )
     }
@@ -319,12 +319,12 @@ class TaskTool @Inject constructor(
     private suspend fun deleteSubagent(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
         val subSessionId = (args["id"] as? JsonPrimitive)?.contentOrNull?.trim()
         if (subSessionId.isNullOrBlank()) {
-            return ToolResult.Error("参数无效：id 不能为空", "INVALID_ARGS")
+            return ToolResult.Error("Invalid parameter: id cannot be empty", "INVALID_ARGS")
         }
         val sub = sessionUseCase.getSessionById(subSessionId)
-            ?: return ToolResult.Error("子会话不存在：$subSessionId", "SESSION_NOT_FOUND")
+            ?: return ToolResult.Error("Sub-session not found: $subSessionId", "SESSION_NOT_FOUND")
         if (sub.parentId != context.sessionId) {
-            return ToolResult.Error("只能删除当前会话派生的子代理", "NOT_YOUR_SUBAGENT")
+            return ToolResult.Error("Can only delete subagents spawned by the current session", "NOT_YOUR_SUBAGENT")
         }
         if (eventBus.activeSubSessionIds.value.contains(subSessionId)) {
             eventBus.emit(
@@ -336,19 +336,19 @@ class TaskTool @Inject constructor(
             )
         }
         sessionUseCase.deleteSession(subSessionId)
-        FileLogger.i(TAG, "子代理已删除: session=$subSessionId parent=${context.sessionId}")
+        FileLogger.i(TAG, "subagent deleted: session=$subSessionId parent=${context.sessionId}")
         return ToolResult.Success(
             buildJsonObject {
                 put("id", subSessionId)
                 put("state", "deleted")
-                put("message", "子代理已删除（含其全部消息）。")
+                put("message", "Subagent deleted (including all of its messages).")
             }
         )
     }
 
     /** 列出当前会话的全部子代理。 */
     private suspend fun listSubagents(context: AgentContext): ToolResult {
-        val parentSessionId = context.sessionId ?: return ToolResult.Error("缺少会话上下文", "NO_SESSION")
+        val parentSessionId = context.sessionId ?: return ToolResult.Error("Missing session context", "NO_SESSION")
         val subs = chatSessionDao.getSubSessionsByParentOnce(parentSessionId)
         val activeIds = eventBus.activeSubSessionIds.value
 

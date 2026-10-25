@@ -34,16 +34,16 @@ class LoadSkillTool @Inject constructor(
     override val name = "loadSkill"
     override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG)
     override val description =
-        "加载指定技能的完整指令正文（SKILL.md）。当任务与「可用技能」清单中任何技能相关时，" +
-            "你必须先调用本工具加载该技能，并在本轮严格遵循其正文，再选择其它工具动手；" +
-            "开始行动前声明你使用了哪个技能及原因；若跳过了一个明显适配的技能，先说明原因。" +
-            "用户以 `/技能名` 触发时正文已注入本轮，无需重复加载。"
+        "Load the full instruction body (SKILL.md) of a named skill. When the task relates to any skill in the \"available skills\" list, " +
+            "you must call this tool first, follow that body strictly this turn, then use other tools; " +
+            "state which skill you are using and why before acting; if you skip an obviously matching skill, explain first. " +
+            "If the user triggered it with `/skill-name`, the body is already injected this turn; do not load it again."
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "skill_name" to ToolParameter(
             name = "skill_name",
             type = ParameterType.STRING,
-            description = "要加载的技能名称（与系统提示「可用技能」清单中的名称一致）。",
+            description = "Skill name to load (must match a name in the system prompt \"available skills\" list).",
             required = true
         )
     )
@@ -51,20 +51,20 @@ class LoadSkillTool @Inject constructor(
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
         val skillName = args["skill_name"]?.jsonPrimitive?.contentOrNull?.trim()
         if (skillName.isNullOrEmpty()) {
-            return ToolResult.Error("缺少必需参数：skill_name", "MISSING_SKILL_NAME")
+            return ToolResult.Error("Missing required parameter: skill_name", "MISSING_SKILL_NAME")
         }
 
         val instructions = skillRepository.loadInstructions(skillName)
         if (instructions == null) {
             val available = skillRepository.listSkills().joinToString(", ") { it.name }
-            FileLogger.w(TAG, "load_skill 未找到: $skillName，可用: $available")
+            FileLogger.w(TAG, "load_skill not found: $skillName, available: $available")
             return ToolResult.Error(
-                "未找到技能「$skillName」。可用技能：${available.ifEmpty { "（无）" }}",
+                "Skill \"$skillName\" not found. Available: ${available.ifEmpty { "(none)" }}",
                 "SKILL_NOT_FOUND"
             )
         }
 
-        FileLogger.d(TAG, "load_skill 加载成功: $skillName (${instructions.length} 字符)")
+        FileLogger.d(TAG, "load_skill loaded: $skillName (${instructions.length} chars)")
         return ToolResult.Success(JsonPrimitive(instructions))
     }
 }

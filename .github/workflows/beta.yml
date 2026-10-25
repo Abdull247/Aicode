@@ -1,23 +1,23 @@
 name: Beta Build
 
-# push 到 main 时自动构建一个测试包：universal flavor、正式签名、与 release 同配置（R8/资源压缩），
-# 仅 applicationId 后缀 .beta（com.aicode.beta，可与正式版同机共存）。
-# 产物上传到 Actions Artifacts（默认保留 90 天），不进 GitHub Release。
-# 打 v* tag 的正式发版走 android-release.yml；合入前门禁走 ci.yml。
+# On push to main, build a test package automatically: universal flavor, real signing, same config as release (R8/resource shrinking),
+# only with the .beta applicationId suffix (com.aicode.beta; can coexist with the release build on one device).
+# Artifacts upload to Actions Artifacts (retained 90 days by default); they never land in GitHub Releases.
+# Official releases for v* tags run in android-release.yml; the pre-merge gate is ci.yml.
 on:
   push:
     branches: [ main ]
-    # 纯文档/资源改动不影响 APK，跳过省时间（与 ci.yml 保持一致）。
+    # Docs-only/asset changes do not affect the APK; skip them to save time (consistent with ci.yml).
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'docs-site/**'
       - 'LICENSE'
       - '.gitignore'
-  # 允许在 Actions 页面手动触发，便于验证链路。
+  # Can be triggered manually from the Actions page to verify the pipeline.
   workflow_dispatch:
 
-# 同分支新提交到来时取消正在跑的旧 beta 构建，省额度。
+# Cancel older beta builds on the same branch when new commits arrive, to save CI minutes.
 concurrency:
   group: beta-${{ github.ref }}
   cancel-in-progress: true
@@ -31,8 +31,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # versionCode 由 build.gradle.kts 的 gitCommitCount() 取 git rev-list --count HEAD，
-          # 浅克隆（默认 depth=1）会得到 1，必须拉完整历史，否则版本号错乱。
+          # versionCode comes from gitCommitCount() in build.gradle.kts, which reads `git rev-list --count HEAD`;
+          # a shallow clone (default depth=1) returns 1, so full history is required or version numbering breaks.
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -41,8 +41,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # runner 预装 SDK 只到 android-36，compileSdk 已升 37（PrismalAGSL 要求），需补装平台。
-      # 不用 android-actions/setup-android：它内部执行已废弃的 `sdkmanager tools` 必崩。
+      # The preinstalled SDK only goes up to android-36, but compileSdk is 37 (required by PrismalAGSL), so the platform must be installed.
+      # Avoid android-actions/setup-android: it runs the deprecated `sdkmanager tools` and always fails.
       - name: Install Android platform 37 & build-tools 36
         run: |
           set -e
@@ -55,14 +55,14 @@ jobs:
           echo "sdkmanager=$SM"
           if [ -z "$SM" ]; then echo "::error::sdkmanager not found"; exit 1; fi
           yes 2>/dev/null | "$SM" --sdk_root="$SDK" --install "build-tools;36.0.0"
-          # 远端已无 platforms;android-37（Android 17 平台更名 android-37.0/37.1/37.2），
-          # 本地开发机留有当年安装的官方 Platform 37 包（api-level=37 rev=2）。
-          # 任何"从 37.0 改元数据"的仿制品都过不了 AGP 校验：
-          #   package.xml path=37.0 -> inconsistent location，目录整体被忽略；
-          #   source.properties ApiLevel=37.0 -> 平台解析成 API 0；
-          #   两者都删 -> AGP 没有注册表可查，Failed to find Platform SDK。
-          # 该真包已作为 asset 附在 v1.0.1 Release（android-platform-37.zip），
-          # 直接下载解压，与本地可编译形态 1:1 一致。
+          # Google's remote no longer hosts platforms;android-37 (the Android 17 platform was renamed to android-37.0/37.1/37.2),
+          # while the local dev machine still has the original Platform 37 package (api-level=37 rev=2).
+          # Any knock-off "patched 37.0 metadata" package fails AGP's validation:
+          #   package.xml path=37.0 -> inconsistent location; the whole directory gets ignored;
+          #   source.properties ApiLevel=37.0 -> the platform resolves to API 0;
+          #   removing both -> AGP has no registry to consult and reports Failed to find Platform SDK.
+          # The genuine package is attached as an asset to the v1.0.1 Release (android-platform-37.zip);
+          # download and extract it directly; it is byte-identical to the locally compilable form.
           rm -rf "$SDK/platforms/android-37"
           curl -sSL --retry 3 -o /tmp/android-37.zip             "https://github.com/hwsyyds666/AiCode/releases/download/v1.0.1/android-platform-37.zip"
           unzip -q -o /tmp/android-37.zip -d "$SDK/platforms/"
@@ -76,8 +76,8 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      # beta 用正式签名：从 Secret 还原 keystore 到 app/aicode.jks，并生成 keystore.properties，
-      # 与 android-release.yml 完全一致；缺任一步 beta 包会变成 unsigned。
+      # beta uses the real signing setup: restore the keystore from secrets to app/aicode.jks and generate keystore.properties,
+      # exactly matching android-release.yml; missing either step leaves the beta APK unsigned.
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.AICODE_KEYSTORE_BASE64 }}
@@ -102,13 +102,13 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 构建 universal beta（arm64-v8a + x86_64，含两套容器镜像的通用包）。
-      # --stacktrace：失败时输出完整调用栈，便于定位 OOM/内存类根因。
+      # Build the universal beta (arm64-v8a + x86_64, the universal package with both container images).
+      # --stacktrace: print the full stack on failure to help pinpoint OOM/memory-related root causes.
       - name: Build universal beta APK
         run: ./gradlew :app:assembleUniversalBeta --stacktrace
 
-      # 产物重命名为 aicode-universal-beta-<sha7>.apk，短 sha 便于区分每次构建。
-      # 同时带上 R8 混淆映射（mapping.txt），供 beta 崩溃报告反混淆。
+      # Rename the output to aicode-universal-beta-<sha7>.apk; the short sha distinguishes builds.
+      # Also attach the R8 mapping (mapping.txt) so beta crash reports can be de-obfuscated.
       - name: Rename APK & collect mapping
         run: |
           set -e
@@ -116,8 +116,8 @@ jobs:
           sha7="${GITHUB_SHA::7}"
           cp "app/build/outputs/apk/universal/beta/app-universal-beta.apk" \
              "dist/aicode-universal-beta-${sha7}.apk"
-          # AGP 8.x 的 mapping 输出目录是 variant 驼峰名（flavor + BuildType），
-          # 即 outputs/mapping/universalBeta/，不是 outputs/mapping/universal/beta/。
+          # On AGP 8.x the mapping output directory uses the variant's camelCase name (flavor + BuildType),
+          # i.e. outputs/mapping/universalBeta/, not outputs/mapping/universal/beta/.
           if [[ -f "app/build/outputs/mapping/universalBeta/mapping.txt" ]]; then
             cp "app/build/outputs/mapping/universalBeta/mapping.txt" \
                "dist/aicode-universal-beta-${sha7}-mapping.txt"
@@ -128,7 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aicode-beta-${{ github.sha }}
-          # Artifacts 默认保留 90 天，无需显式配置。
+          # Artifacts are retained for 90 days by default; no explicit setting needed.
           path: |
             dist/aicode-universal-beta-*.apk
             dist/aicode-universal-beta-*-mapping.txt

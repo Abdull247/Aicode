@@ -37,7 +37,7 @@ class AgentNotificationFormatterTest {
         sourceId = "sub-2",
         title = "重构缓存层",
         outcome = NotificationOutcome.STOPPED,
-        detail = "用户在界面上手动停止了这个子代理，任务未完成。"
+        detail = "The user stopped this subagent from the UI; the task did not finish."
     )
 
     private val modeChange = PendingNotification(
@@ -65,7 +65,7 @@ class AgentNotificationFormatterTest {
         assertTrue(text.contains("<task-id>term-2</task-id>"))
         assertTrue(text.contains("<exit-code>1</exit-code>"))
         assertTrue(text.contains("<status>failed</status>"))
-        assertTrue(text.contains("<summary>后台任务「gradle build」已结束（退出码 1）</summary>"))
+        assertTrue(text.contains("<summary>Background task \"gradle build\" finished (exit code 1)</summary>"))
         assertTrue(text.contains("terminal(action=\"read\", tab_id=\"term-2\")"))
     }
 
@@ -85,7 +85,7 @@ class AgentNotificationFormatterTest {
 
         assertTrue(text.contains("<subagent-notification>"))
         assertTrue(text.contains("<subagent-id>sub-1</subagent-id>"))
-        assertTrue(text.contains("<summary>子代理「调研缓存实现」已执行完成</summary>"))
+        assertTrue(text.contains("<summary>Subagent \"调研缓存实现\" completed</summary>"))
         assertTrue(text.contains("task(action=\"read\", id=\"sub-1\")"))
     }
 
@@ -93,7 +93,7 @@ class AgentNotificationFormatterTest {
     fun message_mergesMixedKinds() {
         val text = AgentNotificationFormatter.buildMessage(listOf(backgroundTask, subAgent))
 
-        assertTrue(text.contains("共有 2 条后台完成通知"))
+        assertTrue(text.contains("There are 2 background completion notifications"))
         assertTrue(text.contains("<task-notification>"))
         assertTrue(text.contains("<subagent-notification>"))
         // 两类都在时两句提示都要给出，AI 才知道各自怎么取回结果
@@ -113,7 +113,7 @@ class AgentNotificationFormatterTest {
         assertTrue((first["summary"] as JsonPrimitive).content.contains("gradle build"))
         assertTrue((first["hint"] as JsonPrimitive).content.contains("terminal(action=\"read\""))
         // notice 是围栏说明：AI 只看单项也能知道这不是用户消息
-        assertTrue((first["notice"] as JsonPrimitive).content.contains("不是来自用户的消息"))
+        assertTrue((first["notice"] as JsonPrimitive).content.contains("not a message from the user"))
 
         val second = array[1] as JsonObject
         assertEquals("subagent", (second["kind"] as JsonPrimitive).content)
@@ -139,9 +139,9 @@ class AgentNotificationFormatterTest {
         val text = AgentNotificationFormatter.buildMessage(listOf(stoppedSubAgent))
 
         assertTrue(text.contains("<status>stopped</status>"))
-        assertTrue(text.contains("<summary>子代理「重构缓存层」已被用户手动终止，任务未完成</summary>"))
-        assertTrue(text.contains("<detail>用户在界面上手动停止了这个子代理，任务未完成。</detail>"))
-        assertTrue(text.contains("不要自行重试"))
+        assertTrue(text.contains("<summary>Subagent \"重构缓存层\" was stopped by the user; the task did not finish</summary>"))
+        assertTrue(text.contains("<detail>The user stopped this subagent from the UI; the task did not finish.</detail>"))
+        assertTrue(text.contains("do not retry on your own"))
     }
 
     @Test
@@ -150,7 +150,7 @@ class AgentNotificationFormatterTest {
         val obj = array[0] as JsonObject
 
         assertEquals("stopped", (obj["status"] as JsonPrimitive).content)
-        assertTrue((obj["detail"] as JsonPrimitive).content.contains("手动停止"))
+        assertTrue((obj["detail"] as JsonPrimitive).content.contains("stopped this subagent"))
     }
 
     /** 正常完成不带 detail，避免白白占用上下文。 */
@@ -170,7 +170,7 @@ class AgentNotificationFormatterTest {
         assertTrue(text.contains("<mode-change>"))
         assertTrue(text.contains("<new-mode>ASK</new-mode>"))
         assertTrue(text.contains("<status>changed</status>"))
-        assertTrue(text.contains("<summary>用户已将模式切换为 ASK</summary>"))
+        assertTrue(text.contains("<summary>The user switched the mode to ASK</summary>"))
     }
 
     @Test
@@ -181,7 +181,7 @@ class AgentNotificationFormatterTest {
         assertEquals("mode_change", (obj["kind"] as JsonPrimitive).content)
         assertEquals("ASK", (obj["new_mode"] as JsonPrimitive).content)
         assertEquals("changed", (obj["status"] as JsonPrimitive).content)
-        assertTrue((obj["hint"] as JsonPrimitive).content.contains("新模式"))
+        assertTrue((obj["hint"] as JsonPrimitive).content.contains("new mode"))
     }
 
     /**
@@ -194,7 +194,7 @@ class AgentNotificationFormatterTest {
 
         assertEquals(userMessage.message, text)
         assertFalse(text.startsWith(BACKGROUND_NOTIFICATION_PREFIX))
-        assertFalse(text.contains("不是来自用户的消息"))
+        assertFalse(text.contains("not a message from the user"))
     }
 
     /** 搭车注入的 JSON 形态：kind=user_message，notice 说明它是用户本人输入而非系统事件。 */
@@ -206,7 +206,7 @@ class AgentNotificationFormatterTest {
         assertEquals("user_message", (obj["kind"] as JsonPrimitive).content)
         assertEquals("message", (obj["status"] as JsonPrimitive).content)
         assertEquals(userMessage.message, (obj["message"] as JsonPrimitive).content)
-        assertTrue((obj["notice"] as JsonPrimitive).content.contains("用户"))
-        assertFalse((obj["notice"] as JsonPrimitive).content.contains("不是来自用户的消息"))
+        assertTrue((obj["notice"] as JsonPrimitive).content.contains("user"))
+        assertFalse((obj["notice"] as JsonPrimitive).content.contains("not a message from the user"))
     }
 }

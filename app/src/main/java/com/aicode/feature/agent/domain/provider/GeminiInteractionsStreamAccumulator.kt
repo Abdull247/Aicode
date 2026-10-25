@@ -288,7 +288,7 @@ internal class GeminiInteractionsStreamAccumulator {
                 val error = event.obj("error")
                 throw StreamApiException(
                     code = error?.str("code"),
-                    message = error?.str("message") ?: "Interactions 流返回 error 事件"
+                    message = error?.str("message") ?: "Interactions stream returned an error event"
                 )
             }
 

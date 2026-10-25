@@ -9,11 +9,11 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        // PrismalAGSL（Liquid Glass）本地镜像：AAR 已 vendor 进 <root>/prismalrepo，
-        // 坐标与 JitPack 完全一致（com.github.styropyr0:PrismalAGSL:v1.0.4），
-        // 不依赖 JitPack 的按需现编。详见 prismalrepo/.../PrismalAGSL-v1.0.4.pom 顶部注释。
+        // Local mirror for PrismalAGSL (Liquid Glass): the AAR is vendored under <root>/prismalrepo,
+        // with coordinates identical to JitPack's (com.github.styropyr0:PrismalAGSL:v1.0.4),
+        // so we do not depend on JitPack's just-in-time builds. See the header comment in prismalrepo/.../PrismalAGSL-v1.0.4.pom.
         maven { url = uri(File(settingsDir, "prismalrepo")) }
-        // Termux 终端组件（terminal-emulator / terminal-view）只在 JitPack 发布，腾讯镜像没有
+        // Termux terminal components (terminal-emulator / terminal-view) are published only on JitPack; the Tencent mirror does not carry them,
         maven { url = uri("https://jitpack.io") }
         maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
         google()

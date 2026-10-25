@@ -407,7 +407,7 @@ class ViewImageTool @Inject constructor(
             inSampleSize = calculateInSampleSize(bounds.width, bounds.height, maxEdge)
         }
         val decoded = BitmapFactory.decodeFile(file.absolutePath, options)
-            ?: throw IllegalArgumentException("无法解码图片：${file.name}")
+            ?: throw IllegalArgumentException("Cannot decode image: ${file.name}")
 
         try {
             val scaled = scaleToMaxEdge(decoded, maxEdge)

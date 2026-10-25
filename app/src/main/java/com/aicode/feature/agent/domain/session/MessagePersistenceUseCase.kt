@@ -155,8 +155,8 @@ class MessagePersistenceUseCase @Inject constructor(
         const val MAX_ATTACHMENTS_BYTES = 20_000
         /** 工具入参上限：与正文同量级，长参数（如大段文件内容）能完整落库、由 UI 限高滚动查看。 */
         const val MAX_TOOL_ARGS_BYTES = 150_000
-        const val IMAGE_OMITTED_MARKER = "[图片已省略：内嵌图片数据过大]"
-        const val CONTENT_TRUNCATED_MARKER = "…[内容过长，已截断]"
+        const val IMAGE_OMITTED_MARKER = "[Image omitted: inline image data too large]"
+        const val CONTENT_TRUNCATED_MARKER = "…[Content too long; truncated]"
         /** 图片 base64 缓存条目上限。 */
         private const val MAX_IMAGE_CACHE_ENTRIES = 12
         /** 图片 base64 缓存总字节上限（base64 为原始大小的 ~4/3，48MB 约可存 36MB 原始图片）。 */
@@ -275,7 +275,7 @@ class MessagePersistenceUseCase @Inject constructor(
 
                     val finalContent = if (attachments.isNotEmpty()) {
                         val attachmentText = buildString {
-                            append("附件：")
+                            append("Attachments: ")
                             attachments.forEach { att ->
                                 append('\n')
                                 append("- ")

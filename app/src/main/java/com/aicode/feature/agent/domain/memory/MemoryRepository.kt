@@ -60,7 +60,7 @@ class MemoryRepository @Inject constructor(
         return when (scope) {
             MemoryScope.GLOBAL -> globalMemorySource.editMemory(name, edits)
             MemoryScope.PROJECT -> {
-                if (projectRoot.isNullOrBlank()) MemoryEditResult.Error("NO_WORKSPACE", "当前未选择工作区，无法编辑项目级记忆")
+                if (projectRoot.isNullOrBlank()) MemoryEditResult.Error("NO_WORKSPACE", "No workspace selected; project memory cannot be edited")
                 else projectSource(projectRoot).editMemory(name, edits)
             }
         }

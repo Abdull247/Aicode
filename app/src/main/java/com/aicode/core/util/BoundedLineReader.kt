@@ -11,7 +11,7 @@ import java.io.Reader
 internal const val MAX_STREAM_LINE_CHARS = 64 * 1024
 
 /** 超长单行被截断后追加的提示行。 */
-internal const val LINE_TRUNCATED_NOTE = "[该行输出过长，已截断]"
+internal const val LINE_TRUNCATED_NOTE = "[Line too long; truncated]"
 
 /** 一行输出；[truncated] 为 true 表示该行超过 [MAX_STREAM_LINE_CHARS] 被截断。 */
 internal class StreamLine(val text: String, val truncated: Boolean)

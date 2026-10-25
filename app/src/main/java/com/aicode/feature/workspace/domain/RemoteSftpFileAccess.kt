@@ -119,7 +119,7 @@ class RemoteSftpFileAccess @Inject constructor(
         return sequence {
             val reader = withSftp { sftp ->
                 val attrs = sftp.statExistence(remote) ?: throw NoSuchFileException(File(remote))
-                if (attrs.type == FileMode.Type.DIRECTORY) throw IOException("是目录，无法按文件读取: $remote")
+                if (attrs.type == FileMode.Type.DIRECTORY) throw IOException("Is a directory; cannot read it as a file: $remote")
                 BoundedLineReader(InputStreamReader(RemoteFileInputStream(sftp.open(remote))))
             }
             try {
@@ -328,10 +328,10 @@ class RemoteSftpFileAccess @Inject constructor(
     /** 读取远程文件全部字节；不存在抛 [NoSuchFileException]，超过 [MAX_REMOTE_READ_BYTES] 抛 [RemoteOutputTooLargeException]。 */
     private fun readAll(remote: String): ByteArray = withSftp { sftp ->
         val attrs = sftp.statExistence(remote) ?: throw NoSuchFileException(File(remote))
-        if (attrs.type == FileMode.Type.DIRECTORY) throw IOException("是目录，无法按文件读取: $remote")
+        if (attrs.type == FileMode.Type.DIRECTORY) throw IOException("Is a directory; cannot read it as a file: $remote")
         if (attrs.size > MAX_REMOTE_READ_BYTES) {
             throw RemoteOutputTooLargeException(
-                "远程文件超过 ${MAX_REMOTE_READ_BYTES / 1024 / 1024}MB，请改用 start_line/end_line 分段读取"
+                "Remote file exceeds ${MAX_REMOTE_READ_BYTES / 1024 / 1024}MB; use start_line/end_line to read it in segments"
             )
         }
         sftp.open(remote).use { rf -> readFully(rf) }

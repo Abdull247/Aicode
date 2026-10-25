@@ -48,7 +48,7 @@ data class ContainerProfile(
         /** 内置 Alpine profile：镜像来自 assets，复用现有安装/provision 全流程。 */
         val BUILTIN_ALPINE = ContainerProfile(
             id = BUILTIN_ID,
-            name = "内置 Alpine",
+            name = "Built-in Alpine",
             rootfsSource = RootfsSource.Asset("alpine-rootfs.bin"),
             shellPath = null,
             extraArgs = DEFAULT_PROOT_ARGS,

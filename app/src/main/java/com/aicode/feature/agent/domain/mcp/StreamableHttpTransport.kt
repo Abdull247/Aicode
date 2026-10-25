@@ -59,16 +59,16 @@ class StreamableHttpTransport(
                 resp.header("Mcp-Session-Id")?.let { if (it.isNotBlank()) sessionId = it }
 
                 if (!resp.isSuccessful) {
-                    throw McpException(message = "HTTP ${resp.code} 调用 $method 失败: ${resp.message}")
+                    throw McpException(message = "HTTP ${resp.code} failed to call $method: ${resp.message}")
                 }
 
                 val contentType = resp.header("Content-Type").orEmpty()
                 val rawJson = if (contentType.contains("text/event-stream", ignoreCase = true)) {
                     extractSseJson(resp.body?.charStream()?.buffered())
-                        ?: throw McpException(message = "SSE 响应中未找到 $method 的数据")
+                        ?: throw McpException(message = "No data for $method found in the SSE response")
                 } else {
                     resp.body?.string()
-                        ?: throw McpException(message = "$method 响应体为空")
+                        ?: throw McpException(message = "$method returned an empty body")
                 }
 
                 parseAndValidate(rawJson, id, method)
@@ -127,11 +127,11 @@ class StreamableHttpTransport(
         val response = runCatching {
             json.decodeFromString(JsonRpcResponse.serializer(), rawJson)
         }.getOrElse {
-            throw McpException(message = "$method 响应 JSON 解析失败: ${it.message}", cause = it)
+            throw McpException(message = "Failed to parse $method response JSON: ${it.message}", cause = it)
         }
 
         response.error?.let {
-            throw McpException(rpcCode = it.code, message = "$method 返回错误 [${it.code}] ${it.message}")
+            throw McpException(rpcCode = it.code, message = "$method returned an error [${it.code}] ${it.message}")
         }
         if (response.id != null && response.id != expectedId) {
             FileLogger.w(TAG, "响应 id 不匹配: 期望 $expectedId, 实际 ${response.id}")

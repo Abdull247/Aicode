@@ -1,11 +1,11 @@
 name: Sync Code & Releases to GitCode
 
-# 定时把 GitHub 主仓库镜像到 GitCode（面向访问不了 GitHub 的用户）：
-#   - 代码：全部分支与 tag（push --prune 保证 GitCode 侧 refs 与 GitHub 完全一致，GitCode 上不要直接改代码）
-#   - Release 资产：把 GitHub 上的 Release APK 同步到 GitCode Release（幂等，默认保留最新 3 个正式版，不含 RC）
-# 每天 1 次自动执行（schedule，UTC 03:17），也可在 Actions 页面手动触发（workflow_dispatch）。
-# 前置配置：GitHub Secret GITCODE_TOKEN = GitCode 个人访问令牌（需仓库读写 + API 权限）
-#           用户名固定用 oauth2，令牌即密码（已实测 GitCode 支持该认证方式）。
+# Periodically mirror the main GitHub repo to GitCode (for users who cannot reach GitHub):
+#   - Code: all branches and tags (push --prune keeps GitCode refs identical to GitHub; never edit code directly on GitCode)
+#   - Release assets: sync Release APKs from GitHub to GitCode Releases (idempotent; keeps the latest 3 stable releases by default, RCs excluded)
+# Runs once a day (schedule, UTC 03:17); can also be triggered manually from the Actions page (workflow_dispatch).
+# Prerequisite: GitHub secret GITCODE_TOKEN = a GitCode personal access token (needs repo read/write + API access)
+#           the username is fixed as oauth2 and the token is the password (verified that GitCode supports this auth).
 
 on:
   schedule:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 需要全部分支和 tag，浅克隆（默认 depth=1）无法覆盖
+          # Needs all branches and tags; a shallow clone (default depth=1) cannot cover them
           fetch-depth: 0
 
       - name: Push branches & tags to GitCode
@@ -30,21 +30,21 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$GITCODE_TOKEN" ]]; then
-            echo "::warning::未配置 GITCODE_TOKEN，跳过 GitCode 代码同步。请到 Settings→Secrets and variables→Actions 添加。"
+            echo "::warning::GITCODE_TOKEN is not set; skipping GitCode code sync. Add it under Settings > Secrets and variables > Actions."
             exit 0
           fi
           owner="${GITCODE_OWNER:-${GITHUB_REPOSITORY%/*}}"
           repo="${GITCODE_REPO:-${GITHUB_REPOSITORY#*/}}"
-          echo "目标 GitCode 仓库: ${owner}/${repo}"
+          echo "Target GitCode repository: ${owner}/${repo}"
           git remote add gitcode "https://oauth2:${GITCODE_TOKEN}@gitcode.com/${owner}/${repo}.git"
           git push --prune gitcode \
             "+refs/heads/*:refs/heads/*" \
             "+refs/tags/*:refs/tags/*"
-          echo "✓ 代码与 tag 已同步到 https://gitcode.com/${owner}/${repo}"
+          echo "✓ Code and tags synced to https://gitcode.com/${owner}/${repo}"
 
-      # Release APK 同步：从 GitHub Release 下载资产并补齐到 GitCode Release（幂等，
-      # 已同步的跳过、失败可重跑续传）。GitCode 无公开附件配额限制且删除 Release 只能
-      # 删 tag（连带删除，副作用大），故不做自动清理，只增量补齐缺失附件。
+      # Release APK sync: download assets from GitHub Releases and fill in GitCode Releases (idempotent;
+      # already-synced ones are skipped and failures can be retried). GitCode has no public attachment quota, and deleting a Release
+      # only works by deleting the tag (destructive side effects), so no auto-cleanup — just incrementally fill in missing assets.
       - name: Sync Release assets to GitCode
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
@@ -54,8 +54,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$GITCODE_TOKEN" ]]; then
-            echo "::warning::未配置 GITCODE_TOKEN，跳过 GitCode Release 同步。请到 Settings→Secrets and variables→Actions 添加。"
+            echo "::warning::GITCODE_TOKEN is not set; skipping GitCode Release sync. Add it under Settings > Secrets and variables > Actions."
             exit 0
           fi
           python3 scripts/sync-gitcode-releases.py
-          echo "✓ Release 资产已同步到 https://gitcode.com/${GITCODE_OWNER:-${GITHUB_REPOSITORY%/*}}/${GITCODE_REPO:-${GITHUB_REPOSITORY#*/}}/releases"
+          echo "✓ Release assets synced to https://gitcode.com/${GITCODE_OWNER:-${GITHUB_REPOSITORY%/*}}/${GITCODE_REPO:-${GITHUB_REPOSITORY#*/}}/releases"

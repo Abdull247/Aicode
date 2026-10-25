@@ -46,7 +46,7 @@ class ShizukuShellService : IShizukuShellService.Stub() {
             result.putString(KEY_OUTPUT, output.build())
             result.putInt(KEY_EXIT_CODE, if (finished) process.exitValue() else EXIT_TIMEOUT)
         } catch (e: Exception) {
-            result.putString(KEY_OUTPUT, e.message ?: "执行失败")
+            result.putString(KEY_OUTPUT, e.message ?: "Execution failed")
             result.putInt(KEY_EXIT_CODE, EXIT_FAILURE)
         } finally {
             process?.destroy()

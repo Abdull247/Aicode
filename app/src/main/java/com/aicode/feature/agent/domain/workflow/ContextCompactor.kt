@@ -151,7 +151,7 @@ class ContextCompactor @Inject constructor(
                 return CompactionResult(micro.messages, compacted = micro.tokens < estimatedTokens)
             }
             FileLogger.w(TAG, "冷却期内工具输出已全部折叠仍超预算：${micro.tokens} / $inputBudget tokens")
-            onEvent(AgentEvent.CompactionFailed("上下文超出预算：工具输出已全部折叠仍不够用，建议新建会话继续"))
+            onEvent(AgentEvent.CompactionFailed("Context exceeds budget: all tool outputs are already folded and it is still over. Start a new session to continue."))
             return CompactionResult(micro.messages, compacted = false)
         }
 

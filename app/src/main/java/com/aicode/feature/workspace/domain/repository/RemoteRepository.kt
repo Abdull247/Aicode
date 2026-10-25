@@ -246,7 +246,7 @@ class RemoteRepository @Inject constructor(
             // 挂载连接不弹确认：提示用户先去连接配置页测试连通性完成确认
             val pending = hostKeyVerifier.consumePending()
             if (pending != null) {
-                Result.failure(Exception("主机密钥未确认，请先在「连接配置」页测试连通性完成确认"))
+                Result.failure(Exception("Host key not confirmed yet; run a connectivity test on the connection config page to confirm it"))
             } else {
                 Result.failure(Exception(friendlySshError(e), e))
             }
@@ -304,7 +304,7 @@ class RemoteRepository @Inject constructor(
 
     suspend fun forceUploadMount(mountId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val engine = activeEngines[mountId] ?: return@withContext Result.failure(Exception("请先连接该挂载点"))
+            val engine = activeEngines[mountId] ?: return@withContext Result.failure(Exception("Connect this mount first"))
             engine.uploadWorkspace()
             Result.success(Unit)
         } catch (e: Exception) {
@@ -314,7 +314,7 @@ class RemoteRepository @Inject constructor(
 
     suspend fun forceDownloadMount(mountId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val engine = activeEngines[mountId] ?: return@withContext Result.failure(Exception("请先连接该挂载点"))
+            val engine = activeEngines[mountId] ?: return@withContext Result.failure(Exception("Connect this mount first"))
             engine.downloadWorkspace()
             Result.success(Unit)
         } catch (e: Exception) {
@@ -414,4 +414,4 @@ class HostKeyConfirmationRequiredException(
     val keyType: String,
     val fingerprint: String,
     val changed: Boolean
-) : Exception("SSH 主机密钥需要确认: $host:$port")
+) : Exception("SSH host key requires confirmation: $host:$port")

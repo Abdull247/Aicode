@@ -222,7 +222,7 @@ class FtpServerManager @Inject constructor(
             return true
         } catch (e: Exception) {
             FileLogger.e(TAG, "启动内置 FTP 服务端失败: ${e.message}", e)
-            _errorMessage.value = e.message ?: "启动失败，可能端口被占用"
+            _errorMessage.value = e.message ?: "Failed to start; the port may already be in use"
             _isRunning.value = false
             return false
         }

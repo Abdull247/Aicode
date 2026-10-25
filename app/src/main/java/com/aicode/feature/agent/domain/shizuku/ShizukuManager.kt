@@ -89,7 +89,7 @@ class ShizukuManager @Inject constructor(
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         shellService = null
-        pendingBind?.completeExceptionally(IllegalStateException("Shizuku 服务已断开"))
+        pendingBind?.completeExceptionally(IllegalStateException("Shizuku service disconnected"))
         pendingBind = null
         refreshState()
     }
@@ -108,7 +108,7 @@ class ShizukuManager @Inject constructor(
 
         override fun onServiceDisconnected(name: ComponentName?) {
             shellService = null
-            pendingBind?.completeExceptionally(IllegalStateException("Shizuku UserService 已断开"))
+            pendingBind?.completeExceptionally(IllegalStateException("Shizuku UserService disconnected"))
             pendingBind = null
             refreshState()
         }
@@ -215,7 +215,7 @@ class ShizukuManager @Inject constructor(
         return bindMutex.withLock {
             shellService?.let { return@withLock it }
             if (computeState() != ShizukuState.READY) {
-                throw IllegalStateException("Shizuku 未就绪（${_state.value}）")
+                throw IllegalStateException("Shizuku is not ready (${_state.value})")
             }
             val deferred = CompletableDeferred<IShizukuShellService>()
             pendingBind = deferred
@@ -223,7 +223,7 @@ class ShizukuManager @Inject constructor(
                 Shizuku.bindUserService(userServiceArgs, serviceConnection)
             }
             withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
-                ?: throw IllegalStateException("绑定 Shizuku 服务超时")
+                ?: throw IllegalStateException("Timed out binding the Shizuku service")
         }
     }
 }

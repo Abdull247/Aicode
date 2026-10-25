@@ -74,7 +74,7 @@ class GitRepository @Inject constructor(
         val result = engine.runCommandSyncUnbounded(buildGitCommand(args), workspaceRepository.currentPath(), timeoutMs)
         if (result.outputTruncated) throw GitOutputTooLargeException()
         if (result.exitCode == 0) return result.output
-        throw GitCommandFailureException(result.output.ifBlank { "git 退出码 ${result.exitCode}" })
+        throw GitCommandFailureException(result.output.ifBlank { "git exited with code ${result.exitCode}" })
     }
 
     /** 拼命令并跑（不判退出码），[git] 与 [gitChecked] 复用。 */
@@ -446,10 +446,10 @@ class GitRepository @Inject constructor(
             .takeIf { it.isNotBlank() && it != "HEAD" && !it.startsWith("fatal") } != null
         if (hasUpstream) return gitChecked("push")
         val remote = git("remote").split('\n').firstOrNull { it.removeSuffix("\r").isNotBlank() }?.removeSuffix("\r")?.trim()
-            ?: throw GitCommandFailureException("未配置远程仓库")
+            ?: throw GitCommandFailureException("No remote repository configured")
         val branch = git("rev-parse", "--abbrev-ref", "HEAD").removeSuffix("\r").trim()
             .takeIf { it.isNotBlank() && it != "HEAD" }
-            ?: throw GitCommandFailureException("无法确定当前分支（处于 detached HEAD）")
+            ?: throw GitCommandFailureException("Cannot determine the current branch (detached HEAD)")
         return gitChecked("push", "--set-upstream", remote, branch)
     }
 
@@ -534,7 +534,7 @@ class GitRepository @Inject constructor(
         val appendCmd = "printf '%s\\n' ${shellQuote(normalized)} >> .gitignore"
         val appendResult = engine.runCommandSyncUnbounded(appendCmd, workspaceRepository.currentPath())
         if (appendResult.exitCode != 0) {
-            throw GitCommandFailureException(appendResult.output.ifBlank { "写入 .gitignore 失败" })
+            throw GitCommandFailureException(appendResult.output.ifBlank { "Failed to write .gitignore" })
         }
         return normalized
     }

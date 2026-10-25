@@ -64,7 +64,7 @@ object KeystoreCipher {
         bytes.size >= BYTE_MAGIC.size + IV_LEN && BYTE_MAGIC.indices.all { bytes[it] == BYTE_MAGIC[it] }
 
     fun decryptBytes(encrypted: ByteArray): ByteArray {
-        require(isEncryptedBytes(encrypted)) { "不是加密数据" }
+        require(isEncryptedBytes(encrypted)) { "Not encrypted data" }
         return runCatching {
             val iv = encrypted.copyOfRange(BYTE_MAGIC.size, BYTE_MAGIC.size + IV_LEN)
             val ciphertext = encrypted.copyOfRange(BYTE_MAGIC.size + IV_LEN, encrypted.size)

@@ -5,12 +5,13 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // 覆盖 AGP 8.9.3 自带的 R8 8.9.x。Kotlin 2.2 官方最低要求 R8 8.10.21，但该版本对
-        // Kotlin 2.2.21 的 stdlib metadata（叠加核心库脱糖逐类重写）仍会抛无害的
-        // "Should never be called" 并逐类刷屏（2000+ 条 WARNING，日志达 40 MB）。
-        // 升到 8.13.19（官方 Kotlin 2.3 档，AGP 8.9.3 在其兼容区间 8.2.2-8.13 内，向下兼容 2.2 class）消除刷屏。
-        // 必须放在根项目 buildscript：放 settings.gradle.kts 的 buildscript 里只影响 settings 脚本自身
-        // 的 classpath，AGP 仍用它捆绑的版本，实测无效。
+        // Overrides the R8 8.9.x bundled with AGP 8.9.3. Kotlin 2.2 officially requires at least R8 8.10.21, but that version
+        // still throws harmless
+        // "Should never be called" warnings for every class while rewriting Kotlin 2.2.21 stdlib metadata
+        // (an overlay on core-library desugaring per class), flooding the log (2000+ WARNINGs, up to 40 MB).
+        // Using 8.13.19 (the official Kotlin 2.3 pick; AGP 8.9.3 is within its 8.2.2-8.13 compat range and it stays backward compatible with 2.2 classes) removes the noise.
+        // Must live in the root project buildscript: putting it in settings.gradle.kts' buildscript only affects the settings
+        // script's own classpath, while AGP keeps using its bundled version — verified no-op in practice.
         classpath("com.android.tools:r8:8.13.19")
     }
 }

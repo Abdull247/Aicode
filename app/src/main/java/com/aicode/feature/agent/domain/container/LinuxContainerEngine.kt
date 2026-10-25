@@ -259,7 +259,7 @@ class LinuxContainerEngine @Inject constructor(
                 emit(CommandEvent.Exit(null))
             } else {
                 FileLogger.e(TAG, "命令读输出异常(已保留此前输出): ${sanitizeCommandForLog(command)}", e)
-                emit(CommandEvent.Line("[命令执行异常：${e.message}]"))
+                emit(CommandEvent.Line("[Command execution error: ${e.message}]"))
                 emit(CommandEvent.Exit(null))
             }
         } finally {
@@ -445,7 +445,7 @@ class LinuxContainerEngine @Inject constructor(
 
     /** 超时提示行（拼进输出，喂回模型/展示给用户）。 */
     private fun timeoutNotice(timeoutMs: Long): String =
-        "[命令执行超时：超过 ${timeoutMs}ms 已被强制终止]"
+        "[Command timed out: exceeded ${timeoutMs}ms and was forcibly terminated]"
 
     /**
      * 启动进程：rootfs/proot 安装就绪则用 PRoot 进入容器；**未就绪则拒绝执行**。
@@ -459,7 +459,7 @@ class LinuxContainerEngine @Inject constructor(
     private fun startContainerProcess(command: String, projectPath: String?): Process {
         val profile = currentProfile
         if (!containerInstaller.isInstalledFor(profile)) {
-            val hint = notReadyHintFor(profile) ?: "容器尚未初始化"
+            val hint = notReadyHintFor(profile) ?: "Container is not initialized yet"
             FileLogger.e(
                 TAG,
                 "容器未就绪，拒绝执行（已禁止原生 shell 回退）: ${sanitizeCommandForLog(command)}"
@@ -568,7 +568,7 @@ class LinuxContainerEngine @Inject constructor(
             FileLogger.i(TAG, "ensureInstalled 完成（耗时 ${System.currentTimeMillis() - startedAt}ms）")
             logContainerDiagnostics("ensureInstalled 完成后")
         } else {
-            val reason = "容器未安装（缺少 rootfs/proot）"
+            val reason = "Container is not installed (rootfs/proot missing)"
             FileLogger.e(TAG, "ensureInstalled 失败：$reason（profile=${profile.id}）")
             logContainerDiagnostics("ensureInstalled 失败")
             _initProgress.value = ContainerInitState.Failed(reason)

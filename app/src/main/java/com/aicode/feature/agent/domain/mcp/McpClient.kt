@@ -62,11 +62,11 @@ class McpClient(
         FileLogger.i(TAG, "[$serverName] 拉取工具列表 tools/list")
         val t0 = System.currentTimeMillis()
         val response = transport.request("tools/list")
-        val result = response.result ?: throw McpException(message = "[$serverName] tools/list 无 result")
+        val result = response.result ?: throw McpException(message = "[$serverName] tools/list returned no result")
         tools = runCatching {
             json.decodeFromJsonElement(McpToolsListResult.serializer(), result).tools
         }.getOrElse {
-            throw McpException(message = "[$serverName] 解析工具列表失败: ${it.message}", cause = it)
+            throw McpException(message = "[$serverName] Failed to parse tool list: ${it.message}", cause = it)
         }
         FileLogger.i(TAG, "[$serverName] tools/list 完成，${tools.size} 个工具（${System.currentTimeMillis() - t0}ms）")
         return tools.size
@@ -83,7 +83,7 @@ class McpClient(
             put("arguments", arguments)
         }
         val response = transport.request("tools/call", params)
-        val result = response.result ?: throw McpException(message = "[$serverName] tools/call 无 result")
+        val result = response.result ?: throw McpException(message = "[$serverName] tools/call returned no result")
 
         val isError = (result["isError"] as? JsonPrimitive)?.contentOrNull == "true"
         val text = flattenContent(result["content"])

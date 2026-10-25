@@ -25,36 +25,36 @@ class WebFetchTool @Inject constructor() : AgentTool() {
     }
 
     override val name = "webfetch"
-    override val description = "抓取指定 HTTP/HTTPS 网页内容。支持提取网页正文为纯文本或返回原始 HTML 结构。"
+    override val description = "Fetch an HTTP/HTTPS page. Can extract clean body text or return raw HTML."
     override val capabilities = setOf(ToolCapability.NETWORK_READ)
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "url" to ToolParameter(
             name = "url",
             type = ParameterType.STRING,
-            description = "需要抓取的网页完整 URL (必须以 http:// 或 https:// 开头)",
+            description = "Full URL to fetch (must start with http:// or https://)",
             required = true
         ),
         "format" to ToolParameter(
             name = "format",
             type = ParameterType.STRING,
-            description = "返回格式：text（默认，去除广告/脚本/样式，仅保留正文）或 html（原始 HTML 源码）",
+            description = "Return format: text (default; strip ads/scripts/styles, keep body) or html (raw HTML source)",
             enum = listOf("text", "html"),
             required = false
         )
     )
 
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
-        val url = args["url"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("缺少必需参数：url")
+        val url = args["url"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("Missing required parameter: url")
         val format = args["format"]?.jsonPrimitive?.contentOrNull ?: "text"
 
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            return ToolResult.Error("url 必须以 http:// 或 https:// 开头")
+            return ToolResult.Error("url must start with http:// or https://")
         }
 
         return withContext(Dispatchers.IO) {
             try {
-                FileLogger.i(TAG, "正在抓取网页: $url, format=$format")
+                FileLogger.i(TAG, "fetching page: $url, format=$format")
 
                 // 从顶层捕获非 HTTP 的连接异常（DNS、超时、SSL 等），直接把具体原因回传给 AI，不做兜底猜测
                 val doc = try {
@@ -70,15 +70,15 @@ class WebFetchTool @Inject constructor() : AgentTool() {
                 }
                 
                 val finalOutput = if (resultText.length > MAX_LENGTH) {
-                    resultText.take(MAX_LENGTH) + "\n\n[网页内容超长，已截断]"
+                    resultText.take(MAX_LENGTH) + "\n\n[Page content too long; truncated]"
                 } else {
                     resultText
                 }
 
                 ToolResult.Success(kotlinx.serialization.json.JsonPrimitive(finalOutput))
             } catch (e: Exception) {
-                FileLogger.e(TAG, "抓取网页时发生异常", e)
-                ToolResult.Error("抓取失败：${e.message}")
+                FileLogger.e(TAG, "fetch page exception", e)
+                ToolResult.Error("Fetch failed: ${e.message}")
             }
         }
     }
@@ -106,30 +106,30 @@ class WebFetchTool @Inject constructor() : AgentTool() {
                 .ignoreContentType(true)
                 .get()
         } catch (e: org.jsoup.HttpStatusException) {
-            FileLogger.e(TAG, "HTTP 状态码异常: ${e.statusCode} - ${e.getUrl()}", e)
-            // 把真实状态码和原始异常描述回传给 AI，不做任何模糊化处理
-            throw FetchException("HTTP ${e.statusCode}：${e.message ?: "无状态描述"}")
+            FileLogger.e(TAG, "HTTP status error: ${e.statusCode} - ${e.getUrl()}", e)
+            // Pass the real status code and original exception text back to the AI; do not blur it.
+            throw FetchException("HTTP ${e.statusCode}: ${e.message ?: "no status description"}")
         } catch (e: org.jsoup.UnsupportedMimeTypeException) {
-            FileLogger.e(TAG, "不支持的响应类型: ${e.getMimeType()} - ${e.getUrl()}", e)
-            throw FetchException("不支持的响应 MIME 类型：${e.getMimeType()}")
+            FileLogger.e(TAG, "unsupported response type: ${e.getMimeType()} - ${e.getUrl()}", e)
+            throw FetchException("Unsupported response MIME type: ${e.getMimeType()}")
         } catch (e: java.net.SocketTimeoutException) {
-            FileLogger.e(TAG, "请求超时: $url", e)
-            throw FetchException("请求超时（15 秒内无响应）")
+            FileLogger.e(TAG, "request timeout: $url", e)
+            throw FetchException("Request timed out (no response within 15 seconds)")
         } catch (e: java.net.UnknownHostException) {
-            FileLogger.e(TAG, "DNS 解析失败: $url", e)
-            throw FetchException("无法解析主机名：${url}")
+            FileLogger.e(TAG, "DNS lookup failed: $url", e)
+            throw FetchException("Cannot resolve host: ${url}")
         } catch (e: javax.net.ssl.SSLException) {
-            FileLogger.e(TAG, "SSL 握手失败: $url", e)
-            throw FetchException("SSL/TLS 握手失败：${e.message ?: "未知原因"}")
+            FileLogger.e(TAG, "SSL handshake failed: $url", e)
+            throw FetchException("SSL/TLS handshake failed: ${e.message ?: "unknown reason"}")
         } catch (e: java.io.IOException) {
-            FileLogger.e(TAG, "网络 I/O 异常: ${e.message} - $url", e)
-            throw FetchException("网络 I/O 异常：${e.message ?: "未知原因"}")
+            FileLogger.e(TAG, "network I/O error: ${e.message} - $url", e)
+            throw FetchException("Network I/O error: ${e.message ?: "unknown reason"}")
         }
     }
 
     /** 把抓取过程中的失败包装成携带具体信息的异常，以便回传给 AI 而非模糊提示。 */
     private class FetchException(val detail: String) : RuntimeException(detail) {
-        fun detailedMessage(url: String): String = "抓取 $url 失败：$detail"
+        fun detailedMessage(url: String): String = "Failed to fetch $url: $detail"
     }
 
     /**

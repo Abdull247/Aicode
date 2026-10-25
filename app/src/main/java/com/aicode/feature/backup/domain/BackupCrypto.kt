@@ -28,7 +28,7 @@ import javax.crypto.spec.SecretKeySpec
  * 口令不落盘、不记忆。GCM 自带完整性校验，口令错误或文件被篡改时解密抛 [BackupDecryptionException]。
  */
 class BackupDecryptionException(cause: Throwable? = null) : IllegalArgumentException(
-    "备份口令错误，或加密备份文件已损坏；若备份未加密，请留空口令",
+    "Wrong backup passphrase, or the encrypted backup file is corrupted; leave the passphrase empty if the backup is not encrypted",
     cause
 )
 
@@ -114,7 +114,7 @@ object BackupCrypto {
 
             if (isLast) break
             index++
-            check(index <= 0xFFFFFFFFL) { "备份文件过大，超出加密格式支持范围" }
+            check(index <= 0xFFFFFFFFL) { "Backup file is too large for the encryption format" }
         }
         output.flush()
     }
@@ -134,7 +134,7 @@ object BackupCrypto {
             return
         }
         if (header[MAGIC.size].toInt() != FORMAT_VERSION) {
-            throw IllegalArgumentException("不支持的加密备份文件版本")
+            throw IllegalArgumentException("Unsupported encrypted backup file version")
         }
 
         val salt = readFully(input, SALT_LEN)
@@ -144,10 +144,10 @@ object BackupCrypto {
         var index = 0L
         while (true) {
             val flag = input.read()
-            if (flag < 0) throw IllegalArgumentException("加密备份文件已截断")
+            if (flag < 0) throw IllegalArgumentException("Encrypted backup file is truncated")
             val len = readInt(input)
             if (len < TAG_BYTES || len > CHUNK_SIZE + TAG_BYTES) {
-                throw IllegalArgumentException("加密备份文件已损坏")
+                throw IllegalArgumentException("Encrypted backup file is corrupted")
             }
             val chunk = readFully(input, len)
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, chunkNonce(nonceBase, index)))
@@ -160,7 +160,7 @@ object BackupCrypto {
             output.write(plain)
             if (flag == 1) break
             index++
-            check(index <= 0xFFFFFFFFL) { "加密备份文件已损坏" }
+            check(index <= 0xFFFFFFFFL) { "Encrypted backup file is corrupted" }
         }
         output.flush()
     }
@@ -200,7 +200,7 @@ object BackupCrypto {
         val b1 = input.read()
         val b2 = input.read()
         val b3 = input.read()
-        if (b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0) throw IllegalArgumentException("加密备份文件已截断")
+        if (b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0) throw IllegalArgumentException("Encrypted backup file is truncated")
         return (b0 shl 24) or (b1 shl 16) or (b2 shl 8) or b3
     }
 
@@ -225,7 +225,7 @@ object BackupCrypto {
         var read = 0
         while (read < len) {
             val n = input.read(buffer, offset + read, len - read)
-            if (n < 0) throw IllegalArgumentException("不是有效的加密 AiCode 备份文件")
+            if (n < 0) throw IllegalArgumentException("Not a valid encrypted AiCode backup file")
             read += n
         }
     }

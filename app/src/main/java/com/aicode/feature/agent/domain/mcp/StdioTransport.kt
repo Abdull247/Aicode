@@ -84,16 +84,16 @@ class StdioTransport(
             writeLine(json.encodeToString(JsonRpcRequest.serializer(), payload))
         } catch (e: Exception) {
             pending.remove(id)
-            throw McpException(message = "[$serverName] 写入 stdin 失败: ${e.message}", cause = e)
+            throw McpException(message = "[$serverName] Failed to write to stdin: ${e.message}", cause = e)
         }
 
         val response = withTimeoutOrNull(REQUEST_TIMEOUT_MS) { deferred.await() }
         if (response == null) {
             pending.remove(id)
-            throw McpException(message = "[$serverName] 请求 $method 超时（${REQUEST_TIMEOUT_MS}ms）")
+            throw McpException(message = "[$serverName] Request $method timed out (${REQUEST_TIMEOUT_MS}ms)")
         }
         response.error?.let {
-            throw McpException(rpcCode = it.code, message = "$method 返回错误 [${it.code}] ${it.message}")
+            throw McpException(rpcCode = it.code, message = "$method returned an error [${it.code}] ${it.message}")
         }
         return response
     }
@@ -115,19 +115,19 @@ class StdioTransport(
         runCatching { process?.destroy() }
         writer = null
         process = null
-        failAllPending("transport 已关闭")
+        failAllPending("transport closed")
     }
 
     /** 惰性启动子进程并挂上 stdout 读循环 / stderr 排空。串行化避免并发重复启动。 */
     private suspend fun ensureStarted() = startMutex.withLock {
         if (process != null) return@withLock
-        if (closed) throw McpException(message = "[$serverName] transport 已关闭")
+        if (closed) throw McpException(message = "[$serverName] transport closed")
 
         FileLogger.i(TAG, "[$serverName] 启动 stdio server: $program ${programArgs.joinToString(" ")}")
         val p = try {
             engine.startStdioProcess(program, programArgs, projectPath, extraEnv, runtimeProfile)
         } catch (e: Exception) {
-            throw McpException(message = "[$serverName] 启动子进程失败: ${e.message}", cause = e)
+            throw McpException(message = "[$serverName] Failed to start subprocess: ${e.message}", cause = e)
         }
         process = p
         writer = p.outputStream.bufferedWriter()
@@ -137,7 +137,7 @@ class StdioTransport(
 
     /** 同步化写入一行（多个并发请求共享一条 stdin）。 */
     private suspend fun writeLine(line: String) = writeMutex.withLock {
-        val w = writer ?: throw McpException(message = "[$serverName] transport 未启动")
+        val w = writer ?: throw McpException(message = "[$serverName] transport not started")
         withContext(Dispatchers.IO) {
             w.write(line)
             w.write("\n")
@@ -183,7 +183,7 @@ class StdioTransport(
         } finally {
             FileLogger.i(TAG, "[$serverName] stdout 已结束（进程可能已退出）")
             logExitCode(p)
-            failAllPending("server stdout 已关闭")
+            failAllPending("server stdout closed")
         }
     }
 

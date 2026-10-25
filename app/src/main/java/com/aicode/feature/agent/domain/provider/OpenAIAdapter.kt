@@ -363,7 +363,7 @@ class OpenAIAdapter @Inject constructor(
                         val line = reader.readLine()
                         if (line == null) {
                             if (!textBuilder.isSalvageableAfterTruncation()) {
-                                throw IOException("SSE 流被中断：未收到 [DONE] 结束标记（疑似网络断开）")
+                                throw IOException("SSE stream interrupted: no [DONE] terminator received (possible network drop)")
                             }
                             truncatedByNetwork = true
                             logStreamTruncated("OpenAI", textBuilder.length, sseLines)
@@ -379,7 +379,7 @@ class OpenAIAdapter @Inject constructor(
                         val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
                         obj.get("error")?.takeIf { it.isJsonObject }?.asJsonObject?.let { errObj ->
                             val code = errObj.get("code")?.takeIf { !it.isJsonNull }?.asString
-                            val msg = errObj.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "未知错误"
+                            val msg = errObj.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "Unknown error"
                             throw StreamApiException(code, msg)
                         }
                         // 单行 SSE 解析：不同上游/模型的字段类型偶有出入（如把对象写成数组、把字符串写成对象），
@@ -553,7 +553,7 @@ class OpenAIAdapter @Inject constructor(
                                     // 没等到终止事件连接就没了。正文还没收到才抛异常让重试/日志接管；
                                     // 已经吐了字就降级交付（标成截断输出，由 Agent 循环自动续写）。
                                     if (!acc.hasSalvageableText()) {
-                                        throw IOException("SSE 流被中断：未收到 response.completed 结束事件（疑似网络断开）")
+                                        throw IOException("SSE stream interrupted: no response.completed event received (possible network drop)")
                                     }
                                     logStreamTruncated("OpenAI/Responses", acc.textLength, sseLines)
                                     acc.markNetworkTruncated()
@@ -570,7 +570,7 @@ class OpenAIAdapter @Inject constructor(
                                 val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
                                 obj.get("error")?.takeIf { it.isJsonObject }?.asJsonObject?.let { errObj ->
                                     val code = errObj.get("code")?.takeIf { !it.isJsonNull }?.asString
-                                    val msg = errObj.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "未知错误"
+                                    val msg = errObj.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "Unknown error"
                                     throw StreamApiException(code, msg)
                                 }
                                 // 单个事件的字段类型异常不应废掉整条流，只跳过该事件；
@@ -811,13 +811,13 @@ class OpenAIAdapter @Inject constructor(
                                 else -> null
                             }
                             if (url != null && url.startsWith("data:image", ignoreCase = true)) {
-                                text.append("\n[图片已省略：内嵌图片数据过大]")
+                                text.append("\n[Image omitted: inline image data too large]")
                             } else if (!url.isNullOrBlank()) {
-                                text.append("\n[图片：").append(url).append("]")
+                                text.append("\n[Image: ").append(url).append("]")
                             }
                         }
                         "input_image" -> {
-                            text.append("\n[图片已省略：内嵌图片数据过大]")
+                            text.append("\n[Image omitted: inline image data too large]")
                         }
                         else -> {}
                     }

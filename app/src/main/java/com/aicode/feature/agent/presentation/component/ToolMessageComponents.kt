@@ -662,7 +662,7 @@ internal fun ToolSection(label: String, content: String, live: Boolean = false) 
     // 静态超长输出截断（见 TOOL_SECTION_CHAR_LIMIT）；live 已由调用方 takeLastLines 控制。
     val renderContent = remember(content, live) {
         if (!live && content.length > TOOL_SECTION_CHAR_LIMIT) {
-            content.take(TOOL_SECTION_CHAR_LIMIT) + "\n…（输出超长，已截断展示）"
+            content.take(TOOL_SECTION_CHAR_LIMIT) + "\n…(output too long, truncated)"
         } else {
             content
         }

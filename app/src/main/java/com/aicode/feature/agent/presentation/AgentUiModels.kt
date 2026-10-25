@@ -152,13 +152,19 @@ enum class MessageRole {
  * [com.aicode.feature.agent.domain.notification.AgentNotificationFormatter] 生成通知消息时的起首文本，
  * 也是 UI 层识别此类消息（不渲染为普通用户气泡）的依据。改这里需同步两边。
  */
-const val BACKGROUND_NOTIFICATION_PREFIX = "[系统通知 - 非用户输入]"
+const val BACKGROUND_NOTIFICATION_PREFIX = "[system notification - not user input]"
+
+/** Pre-translation prefix persisted in old DB rows; kept for recognition only. */
+const val LEGACY_BACKGROUND_NOTIFICATION_PREFIX = "[系统通知 - 非用户输入]"
 
 /**
  * 上下文压缩失败记录的 TOOL 消息 toolName。既是落库时的标记，也是 UI 识别失败卡片的依据；
  * 该消息无配对 toolCallId，[MessagePersistenceUseCase.buildHistory] 回放时会自动丢弃，不进入模型上下文。
  */
-const val COMPACTION_FAILURE_TOOL_NAME = "上下文压缩"
+const val COMPACTION_FAILURE_TOOL_NAME = "Context compaction"
+
+/** Pre-translation toolName persisted in old DB rows; kept for recognition only. */
+const val LEGACY_COMPACTION_FAILURE_TOOL_NAME = "上下文压缩"
 
 /**
  * 一次会话消息查询的结果快照。

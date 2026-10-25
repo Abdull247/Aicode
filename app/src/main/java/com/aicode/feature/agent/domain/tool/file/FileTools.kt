@@ -28,25 +28,25 @@ class ReadFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider
 ) : AgentTool() {
     override val name = "readFile"
-    override val description = "读取文件内容（工作区文件或容器绝对路径的系统文件）。单次读取有行数与字节上限，超出可用 start_line 分段续读。"
+    override val description = "Read a file (workspace file or container absolute path). Each read has line and byte limits; continue with start_line if truncated."
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
     override val parameters = mapOf(
-        "path" to ToolParameter("path", ParameterType.STRING, "文件路径：~/workspace/... 为项目文件；其它绝对路径（如 /etc/...、/root/...）为容器系统文件。", required = true),
-        "start_line" to ToolParameter("start_line", ParameterType.INTEGER, "开始行号（从 1 计）。", required = false),
-        "end_line" to ToolParameter("end_line", ParameterType.INTEGER, "结束行号；与 start_line 的跨度最多 2000 行，超出按 2000 行截断。", required = false)
+        "path" to ToolParameter("path", ParameterType.STRING, "File path: ~/workspace/... for project files; other absolute paths (e.g. /etc/..., /root/...) for container system files.", required = true),
+        "start_line" to ToolParameter("start_line", ParameterType.INTEGER, "Start line (1-based).", required = false),
+        "end_line" to ToolParameter("end_line", ParameterType.INTEGER, "End line; span from start_line is at most 2000 lines, truncated beyond that.", required = false)
     )
 
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
         return try {
             val path = args["path"]?.jsonPrimitive?.contentOrNull ?: run {
-                FileLogger.w(TAG, "read_file 缺少 path 参数")
-                return ToolResult.Error("缺少必需参数：path", "MISSING_PATH")
+                FileLogger.w(TAG, "read_file missing path")
+                return ToolResult.Error("Missing required parameter: path", "MISSING_PATH")
             }
             FileLogger.d(TAG, "read_file path=$path")
 
             if (!fileAccess.exists(path)) {
-                FileLogger.w(TAG, "read_file 文件不存在: $path")
-                return ToolResult.Error("文件不存在：$path", "FILE_NOT_FOUND")
+                FileLogger.w(TAG, "read_file file not found: $path")
+                return ToolResult.Error("File not found: $path", "FILE_NOT_FOUND")
             }
 
             val startLine = args["start_line"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1) ?: 1
@@ -94,11 +94,11 @@ class ReadFileTool @Inject constructor(
             val truncated = emittedLines > 0 && lastEmittedLine < wantedEnd
             val note = when {
                 !truncated -> null
-                truncatedByBytes -> "内容超过 ${MAX_BYTES / 1024}KB 上限已截断，可从第 ${lastEmittedLine + 1} 行起用 start_line 继续读取。"
-                else -> "内容超过 $MAX_LINES 行上限已截断，可从第 ${lastEmittedLine + 1} 行起用 start_line 继续读取。"
+                truncatedByBytes -> "Content exceeded the ${MAX_BYTES / 1024}KB limit and was truncated. Continue with start_line=${lastEmittedLine + 1}."
+                else -> "Content exceeded the $MAX_LINES-line limit and was truncated. Continue with start_line=${lastEmittedLine + 1}."
             }
 
-            FileLogger.v(TAG, "read_file 成功 path=$path total=$totalLines emitted=$emittedLines bytes=$byteCount truncated=$truncated")
+            FileLogger.v(TAG, "read_file ok path=$path total=$totalLines emitted=$emittedLines bytes=$byteCount truncated=$truncated")
             val resultMap = mutableMapOf<String, JsonElement>(
                 "content" to JsonPrimitive(sb.toString()),
                 "total_lines" to JsonPrimitive(totalLines),
@@ -110,8 +110,8 @@ class ReadFileTool @Inject constructor(
             if (note != null) resultMap["note"] = JsonPrimitive(note)
             ToolResult.Success(JsonObject(resultMap))
         } catch (e: Exception) {
-            FileLogger.e(TAG, "read_file 异常", e)
-            ToolResult.Error(e.message ?: "读取文件失败", "READ_ERROR")
+            FileLogger.e(TAG, "read_file exception", e)
+            ToolResult.Error(e.message ?: "Failed to read file", "READ_ERROR")
         }
     }
 
@@ -133,13 +133,13 @@ class WriteFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider
 ) : AgentTool() {
     override val name = "writeFile"
-    override val description = "写入完整文件内容，文件不存在时自动创建（含父目录）。局部修改请用 editFile。"
+    override val description = "Write a full file; creates the file and parent dirs if missing. Use editFile for local edits."
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.WRITE_WORKSPACE)
     override val parameters = mapOf(
-        "path" to ToolParameter("path", ParameterType.STRING, "文件路径：~/workspace/... 为项目文件；其它绝对路径（如 /etc/...、/root/...）为容器系统文件。", required = true),
-        "content" to ToolParameter("content", ParameterType.STRING, "文件内容", required = true),
-        "overwrite" to ToolParameter("overwrite", ParameterType.BOOLEAN, "目标已存在时是否覆盖。默认 true；设为 false 时若文件已存在则报错。", required = false)
+        "path" to ToolParameter("path", ParameterType.STRING, "File path: ~/workspace/... for project files; other absolute paths (e.g. /etc/..., /root/...) for container system files.", required = true),
+        "content" to ToolParameter("content", ParameterType.STRING, "File content", required = true),
+        "overwrite" to ToolParameter("overwrite", ParameterType.BOOLEAN, "Overwrite if the target exists. Default true; false errors if the file already exists.", required = false)
     )
 
     override fun buildPermissionRequest(
@@ -163,17 +163,17 @@ class WriteFileTool @Inject constructor(
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
         return try {
             val path = args["path"]?.jsonPrimitive?.contentOrNull ?: run {
-                FileLogger.w(TAG, "write_file 缺少 path 参数")
-                return ToolResult.Error("缺少必需参数：path", "MISSING_PATH")
+                FileLogger.w(TAG, "write_file missing path")
+                return ToolResult.Error("Missing required parameter: path", "MISSING_PATH")
             }
             val content = args["content"]?.jsonPrimitive?.contentOrNull ?: ""
             val overwrite = args["overwrite"]?.jsonPrimitive?.booleanOrNull ?: true
 
-            FileLogger.d(TAG, "write_file path=$path (${content.length} 字符, overwrite=$overwrite)")
+            FileLogger.d(TAG, "write_file path=$path (${content.length} chars, overwrite=$overwrite)")
             val existed = fileAccess.exists(path)
             if (existed && !overwrite) {
-                FileLogger.w(TAG, "write_file 文件已存在且 overwrite=false: $path")
-                return ToolResult.Error("文件已存在：$path（overwrite=false）", "FILE_EXISTS")
+                FileLogger.w(TAG, "write_file exists and overwrite=false: $path")
+                return ToolResult.Error("File already exists: $path (overwrite=false)", "FILE_EXISTS")
             }
 
             // 写前留存旧内容，供生成「旧→新」差异（与 edit_file 同构，UI 据此渲染彩色 diff）。
@@ -196,7 +196,7 @@ class WriteFileTool @Inject constructor(
                 ))
             ))
 
-            FileLogger.v(TAG, "write_file 成功 path=$path created=${!existed} lines=${content.lines().size} (+$added -$removed)")
+            FileLogger.v(TAG, "write_file ok path=$path created=${!existed} lines=${content.lines().size} (+$added -$removed)")
             ToolResult.Success(
                 JsonObject(mapOf(
                     "path" to JsonPrimitive(fileAccess.toDisplayPath(path)),
@@ -209,8 +209,8 @@ class WriteFileTool @Inject constructor(
                 ))
             )
         } catch (e: Exception) {
-            FileLogger.e(TAG, "write_file 异常", e)
-            ToolResult.Error(e.message ?: "写入文件失败", "WRITE_ERROR")
+            FileLogger.e(TAG, "write_file exception", e)
+            ToolResult.Error(e.message ?: "Failed to write file", "WRITE_ERROR")
         }
     }
 
@@ -226,7 +226,7 @@ class WriteFileTool @Inject constructor(
         if (!existed) return newLines.joinToString("\n") { "+$it" }
         val oldLines = oldContent.split("\n")
         if (maxOf(oldLines.size, newLines.size) > MAX_DIFF_LINES) {
-            FileLogger.w(TAG, "write_file 文件过大跳过 LCS 差异 (old=${oldLines.size}, new=${newLines.size})")
+            FileLogger.w(TAG, "write_file too large, skip LCS diff (old=${oldLines.size}, new=${newLines.size})")
             return newLines.joinToString("\n") { "+$it" }
         }
         return LineDiff.toUnified(oldContent, newContent)

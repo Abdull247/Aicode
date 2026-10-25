@@ -283,14 +283,14 @@ internal class ResponsesStreamAccumulator {
                 val error = response?.obj("error") ?: event.obj("error")
                 throw StreamApiException(
                     code = error?.str("code"),
-                    message = error?.str("message") ?: "Responses 流以 response.failed 结束"
+                    message = error?.str("message") ?: "Responses stream ended with response.failed"
                 )
             }
 
             // 传输层错误事件：code / message 就在事件自身上（不嵌在 error 对象里）。
             ResponsesEvent.ERROR, ResponsesEvent.RESPONSE_ERROR -> throw StreamApiException(
                 code = event.str("code"),
-                message = event.str("message") ?: "Responses 流返回 error 事件"
+                message = event.str("message") ?: "Responses stream returned an error event"
             )
         }
         return null

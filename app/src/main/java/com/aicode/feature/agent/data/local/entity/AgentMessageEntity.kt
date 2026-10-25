@@ -7,6 +7,8 @@ import androidx.room.PrimaryKey
 import com.aicode.feature.agent.presentation.AgentAttachment
 import com.aicode.feature.agent.presentation.BACKGROUND_NOTIFICATION_PREFIX
 import com.aicode.feature.agent.presentation.COMPACTION_FAILURE_TOOL_NAME
+import com.aicode.feature.agent.presentation.LEGACY_BACKGROUND_NOTIFICATION_PREFIX
+import com.aicode.feature.agent.presentation.LEGACY_COMPACTION_FAILURE_TOOL_NAME
 import com.aicode.feature.agent.presentation.MessageRole
 import com.aicode.feature.agent.presentation.AgentUIMessage
 import kotlinx.serialization.decodeFromString
@@ -70,9 +72,11 @@ data class AgentMessageEntity(
             attachments = decodeAttachments(attachmentsJson),
             isCompactionMarker = isCompactionMarker,
             isContextSummary = isContextSummary,
-            isCompactionFailure = roleEnum == MessageRole.TOOL && toolName == COMPACTION_FAILURE_TOOL_NAME,
+            isCompactionFailure = roleEnum == MessageRole.TOOL &&
+                (toolName == COMPACTION_FAILURE_TOOL_NAME || toolName == LEGACY_COMPACTION_FAILURE_TOOL_NAME),
             isBackgroundNotification = roleEnum == MessageRole.USER &&
-                content.startsWith(BACKGROUND_NOTIFICATION_PREFIX),
+                (content.startsWith(BACKGROUND_NOTIFICATION_PREFIX) ||
+                    content.startsWith(LEGACY_BACKGROUND_NOTIFICATION_PREFIX)),
             inputTokens = inputTokens,
             outputTokens = outputTokens,
             cachedInputTokens = cachedInputTokens

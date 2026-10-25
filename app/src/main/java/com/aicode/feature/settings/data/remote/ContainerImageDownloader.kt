@@ -52,7 +52,7 @@ class ContainerImageDownloader @Inject constructor(
                 override fun onResponse(call: Call, response: Response) {
                     try {
                         if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                        val body = response.body ?: throw IOException("响应体为空")
+                        val body = response.body ?: throw IOException("Response body is empty")
                         val total = body.contentLength()
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         var read = 0L

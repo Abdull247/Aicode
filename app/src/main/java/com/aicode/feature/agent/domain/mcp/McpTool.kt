@@ -64,7 +64,7 @@ class McpTool(
     override val name: String = buildNamespacedName(client.serverName, descriptor.name)
 
     override val description: String =
-        descriptor.description ?: "MCP 工具 ${descriptor.name}（来自 ${client.serverName}）"
+        descriptor.description ?: "MCP tool ${descriptor.name} (from ${client.serverName})"
     override val capabilities = setOf(ToolCapability.EXTERNAL_TOOL)
 
     // 所有 MCP 工具统一走工具权限：默认需审核，可「始终允许」记忆（见 ToolPermissionPolicyEngine）。
@@ -95,10 +95,10 @@ class McpTool(
             }
         } catch (e: McpException) {
             FileLogger.e(TAG, "MCP 工具调用失败: $name", e)
-            ToolResult.Error("MCP 工具执行失败：${e.message}")
+            ToolResult.Error("MCP tool execution failed: ${e.message}")
         } catch (e: Exception) {
             FileLogger.e(TAG, "MCP 工具调用异常: $name", e)
-            ToolResult.Error("MCP 工具执行异常：${e.message}")
+            ToolResult.Error("MCP tool execution error: ${e.message}")
         }
     }
 

@@ -73,7 +73,7 @@ class ProviderDashboardRunner @Inject constructor(
             }
 
             val jsonSnippet = extractJsonSnippet(rawOutput)
-                ?: throw IllegalArgumentException("输出中未找到有效的 JSON 结构: $rawOutput")
+                ?: throw IllegalArgumentException("No valid JSON structure found in the output: $rawOutput")
 
             val parsedElement = json.parseToJsonElement(jsonSnippet)
             val card = parseCardRoot(parsedElement)
@@ -688,7 +688,7 @@ class ProviderDashboardRunner @Inject constructor(
 
         if (result.exitCode != null && result.exitCode != 0) {
             FileLogger.w(TAG, "自定义面板脚本执行非零退出 code=${result.exitCode} output=$output")
-            throw IllegalStateException("脚本退出码: ${result.exitCode}\n$output")
+            throw IllegalStateException("Script exit code: ${result.exitCode}\n$output")
         }
 
         parseDashboardJson(output)

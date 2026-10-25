@@ -63,13 +63,13 @@ class BoundedOutput(
         return buildString {
             append(head)
             if (tail.isEmpty()) {
-                append("\n\n…[输出过长，已省略后续 ")
+                append("\n\n…[Output too long; omitted ")
                 append(omitted)
-                append(" 个字符]…")
+                append(" characters]…")
             } else {
-                append("\n\n…[输出过长，已省略中间 ")
+                append("\n\n…[Output too long; omitted ")
                 append(omitted)
-                append(" 个字符；仅保留开头与结尾]…\n\n")
+                append(" characters in the middle; keeping head and tail only]…\n\n")
                 append(tail)
             }
         }

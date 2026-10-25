@@ -164,7 +164,7 @@ class GeminiAdapter @Inject constructor(
             content = contentText,
             toolCalls = toolCalls,
             stopReason = if (aborted) "failed" else finishReason,
-            stopDetail = if (aborted) parseFailure?.message ?: "Gemini 响应解析失败" else null,
+            stopDetail = if (aborted) parseFailure?.message ?: "Failed to parse Gemini response" else null,
             reasoning = thinkingText.ifEmpty { null },
             thinkingBlocksJson = partsSnapshot,
             inputTokens = inputTokens,
@@ -247,7 +247,7 @@ class GeminiAdapter @Inject constructor(
                             val line = reader.readLine()
                             if (line == null) {
                                 if (!textBuilder.isSalvageableAfterTruncation()) {
-                                    throw IOException("SSE 流被中断（疑似网络断开）")
+                                    throw IOException("SSE stream interrupted (possible network drop)")
                                 }
                                 truncatedByNetwork = true
                                 logStreamTruncated("Gemini", textBuilder.length, sseLines)
@@ -508,7 +508,7 @@ class GeminiAdapter @Inject constructor(
                                 val line = reader.readLine()
                                 if (line == null) {
                                     if (acc.streamedTextLength <= 0) {
-                                        throw IOException("SSE 流被中断：interaction 未到终态（疑似网络断开）")
+                                        throw IOException("SSE stream interrupted: interaction never reached a terminal state (possible network drop)")
                                     }
                                     acc.markTruncatedByNetwork()
                                     logStreamTruncated("Gemini/Interactions", acc.streamedTextLength, sseLines)

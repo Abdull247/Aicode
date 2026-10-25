@@ -227,9 +227,9 @@ class BackupManagerImpl @Inject constructor(
             is IllegalStateException -> throw e
             else -> throw IllegalArgumentException(
                 if (pw != null) {
-                    "备份文件已损坏，或口令与备份文件不匹配"
+                    "The backup file is corrupted, or the passphrase does not match this backup"
                 } else {
-                    "不是有效的 AiCode 备份文件；如果这是加密备份，请输入导出口令"
+                    "Not a valid AiCode backup file; if this is an encrypted backup, enter the export passphrase"
                 },
                 e
             )
@@ -505,7 +505,7 @@ class BackupManagerImpl @Inject constructor(
         }
         val meta = metadata ?: run {
             FileLogger.e(TAG, "导入失败：tar 中缺少 metadata.json")
-            error("不是有效的 AiCode 备份文件：缺少 metadata.json")
+            error("Not a valid AiCode backup file: metadata.json is missing")
         }
         FileLogger.i(TAG, "tar 解析完成，开始还原元数据段")
         return stats + restoreMeta(meta)
@@ -552,7 +552,7 @@ class BackupManagerImpl @Inject constructor(
 
     private fun checkVersion(schemaVersion: Int) {
         if (schemaVersion > currentSchemaVersion()) {
-            error("备份的数据库版本 v$schemaVersion 高于本应用 v${currentSchemaVersion()}，请升级应用")
+            error("Backup database version v$schemaVersion is newer than this app (v${currentSchemaVersion()}); please upgrade the app")
         }
     }
 
