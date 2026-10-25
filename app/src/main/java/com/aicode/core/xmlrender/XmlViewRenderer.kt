@@ -517,8 +517,11 @@ class XmlViewRenderer(
             get("android:useDefaultMargins")?.toBoolean()?.let { view.useDefaultMargins = it }
         }
 
-        if (view is ScrollView || view is HorizontalScrollView) {
-            get("android:fillViewport")?.toBoolean()?.let { view.isFillViewport = it }
+        if (view is ScrollView) {
+            get("android:fillViewport")?.toBoolean()?.let { view.setFillViewport(it) }
+        }
+        if (view is HorizontalScrollView) {
+            get("android:fillViewport")?.toBoolean()?.let { view.setFillViewport(it) }
         }
 
         if (view is Toolbar) {
@@ -625,7 +628,10 @@ class XmlViewRenderer(
 
     private fun applyMargins(lp: ViewGroup.MarginLayoutParams, attrs: Map<String, String>) {
         fun get(key: String): String? = attrs[key]?.takeIf { it.isNotBlank() }
-        fun px(key: String): Int? = dimenFor(get(key) ?: return null)
+        fun px(key: String): Int? {
+            val raw = get(key) ?: return null
+            return dimenFor(raw)
+        }
         val all = px("android:layout_margin")
         val horizontal = px("android:layout_marginHorizontal")
         val vertical = px("android:layout_marginVertical")

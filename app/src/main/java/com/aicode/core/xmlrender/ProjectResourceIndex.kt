@@ -120,7 +120,7 @@ class ProjectResourceIndex private constructor(
         private fun contentFiles(dirPath: String): List<Pair<String, String>> =
             runCatching {
                 fileAccess.listFiles(dirPath)
-                    .filter { it.isFile }
+                    .filter { !it.isDirectory }
                     .map { it.name to "$dirPath/${it.name}" }
                     .sortedBy { it.second }
             }.getOrElse {
