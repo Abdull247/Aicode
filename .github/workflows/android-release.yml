@@ -183,6 +183,52 @@ jobs:
           fi
           ls -lh dist/
 
+      # AGP 8 Signflinger writes META-INF/MANIFEST.MF + CERT.* but the v1 JAR
+      # scheme does not actually verify (apksigner reports "v1 scheme: false").
+      # MT Manager and some OEM package installers then show
+      # "Signature: Verified failed" / "App not installed as package appears to be invalid".
+      # Re-sign with the platform apksigner so v1+v2+v3 are all real signatures.
+      - name: Re-sign APKs with v1+v2+v3
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.AICODE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.AICODE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.AICODE_KEY_PASSWORD }}
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=""
+          for c in "$SDK/build-tools/36.0.0/apksigner" "$SDK/build-tools/35.0.0/apksigner"; do
+            if [ -x "$c" ]; then APKSIGNER="$c"; break; fi
+          done
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER="$(find "$SDK/build-tools" -name apksigner -type f | sort | tail -1)"
+          fi
+          echo "apksigner=$APKSIGNER"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under $SDK/build-tools"
+            exit 1
+          fi
+          for apk in dist/aicode-*.apk; do
+            echo "=== re-signing $apk ==="
+            tmp="${apk}.resigned"
+            "$APKSIGNER" sign \
+              --ks app/aicode.jks \
+              --ks-pass "pass:${KEYSTORE_PASSWORD}" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --key-pass "pass:${KEY_PASSWORD}" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out "$tmp" \
+              "$apk"
+            mv "$tmp" "$apk"
+            "$APKSIGNER" verify --verbose "$apk" 2>&1 | tee /tmp/apk-verify.txt
+            if ! grep -q "Verified using v1 scheme (JAR signing): true" /tmp/apk-verify.txt; then
+              echo "::error::$apk still has no valid v1 JAR signature"
+              exit 1
+            fi
+          done
+
       - name: Determine release name
         id: release
         run: |
