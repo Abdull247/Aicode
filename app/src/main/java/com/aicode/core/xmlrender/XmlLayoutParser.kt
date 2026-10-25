@@ -56,7 +56,7 @@ class XmlLayoutParser {
         val attrs = collectAttrs(parser)
 
         if (tag == "include") {
-            return parseInclude(attrs, sourceName, layoutResolver, depth)
+            return parseInclude(parser, attrs, sourceName, layoutResolver, depth)
         }
 
         val node = LayoutNode(tag = tag, attrs = attrs, source = sourceName)
@@ -71,7 +71,9 @@ class XmlLayoutParser {
         while (inside != XmlPullParser.END_TAG) {
             if (inside == XmlPullParser.START_TAG) {
                 val child = parseNode(parser, sourceName, layoutResolver, depth)
-                if (child.tag == "merge" && node.children.isEmpty()) {
+                // <merge> children splice directly into the including parent (Android
+                // semantics); a top-level merge is kept as a node for the render host.
+                if (child.tag == "merge" && node.tag != "merge") {
                     node.children += child.children
                 } else {
                     node.children += child
@@ -83,6 +85,7 @@ class XmlLayoutParser {
     }
 
     private fun parseInclude(
+        parser: XmlPullParser,
         attrs: Map<String, String>,
         sourceName: String,
         layoutResolver: (String) -> String?,
@@ -96,15 +99,27 @@ class XmlLayoutParser {
         val xml = runCatching { layoutResolver(ref) }.getOrNull()
             ?: return placeholder("include", "Included layout not found: @layout/$ref")
         val root = parseInternal(xml, "@layout/$ref", layoutResolver, depth = depth + 1)
-        val inlined = if (root.tag == "merge") {
-            LayoutNode(tag = "FrameLayout", attrs = emptyMap(), source = root.source).apply {
-                children += root.children
+        val inlined = root
+        // The parent's child loop must stay aligned with the outer parser: consume the
+        // include element itself (self-closing or with ignored nested content).
+        var pending = 1
+        while (pending > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> pending++
+                XmlPullParser.END_TAG -> pending--
+                XmlPullParser.END_DOCUMENT ->
+                    throw IllegalStateException("Unterminated <include> in $sourceName")
             }
-        } else {
-            root
         }
         for ((key, value) in attrs) {
-            if (key == "layout" || key == "android:id" || key.startsWith("layout_")) continue
+            if (key == "layout" || key == "android:id" || key.startsWith("layout_")) {
+                continue
+            }
+            if (inlined.tag == "merge") {
+                // Extra attrs on an include of a merge target have no single root to
+                // apply to; drop them like Android does.
+                continue
+            }
             inlined.attrs = inlined.attrs + (key to value)
         }
         return inlined

@@ -102,7 +102,10 @@ class ProjectResourceIndex private constructor(
                 warnings += "Cannot list $resDir: ${it.message}"
                 emptyList()
             }
-            for (dir in subdirs.filter { it.isDirectory }.map { it.name }) {
+            // Sorted so base folders are scanned before qualifier variants (e.g. values
+            // before values-night): later scans win, mirroring aapt's precedence regardless
+            // of the filesystem's listing order.
+            for (dir in subdirs.filter { it.isDirectory }.map { it.name }.sorted()) {
                 val dirPath = "$resDir/$dir"
                 when {
                     dir.startsWith("values") -> {
@@ -273,7 +276,7 @@ class ProjectResourceIndex private constructor(
                         if (parser.name == "item") {
                             inItem = true
                             itemAttrs = parser.attributeCount
-                            val color = parser.getAttributeValue(null, "color")
+                            val color = parser.attrValueByName("color")
                             if (!color.isNullOrBlank()) {
                                 val trimmed = color.trim()
                                 if (itemAttrs == 1) {
@@ -299,6 +302,21 @@ class ProjectResourceIndex private constructor(
                 }
             }
             return firstText ?: firstColor
+        }
+
+        /**
+         * Index-based attribute lookup by name. With namespaces off the pull parser
+         * reports prefixed attributes under their full raw name ("android:color") with a
+         * null prefix, so both spellings are matched here.
+         */
+        private fun XmlPullParser.attrValueByName(name: String): String? {
+            for (i in 0 until attributeCount) {
+                val attributeName = getAttributeName(i)
+                if (attributeName == name || attributeName == "android:$name") {
+                    return getAttributeValue(i)
+                }
+            }
+            return null
         }
 
         /** Minimal framework color table for "@android:color/x" references. */

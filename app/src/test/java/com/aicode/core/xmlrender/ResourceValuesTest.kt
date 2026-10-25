@@ -13,7 +13,7 @@ class ResourceValuesTest {
         assertEquals(0xFF112233u.toInt(), ResourceValues.parseColor("#112233"))
         assertEquals(0x80112233u.toInt(), ResourceValues.parseColor("#80112233"))
         assertEquals(0xFF012345u.toInt(), ResourceValues.parseColor("#012345"))
-        assertEquals(0xFF112233u.toInt(), ResourceValues.parseColor("#F12"))          // #RGB -> FFRRGGBB
+        assertEquals(0xFFFF1122u.toInt(), ResourceValues.parseColor("#F12"))          // #RGB: digits repeat as RR GG BB
         assertEquals(0x88FF1122u.toInt(), ResourceValues.parseColor("#8F12"))         // #ARGB: digits expand
         assertNull(ResourceValues.parseColor("red"))
         assertNull(ResourceValues.parseColor("#12345"))
