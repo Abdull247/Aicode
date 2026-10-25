@@ -12,7 +12,7 @@ Tools are grouped into five categories. Tap a group title to collapse or expand 
 
 | Group | Includes (partial) |
 | --- | --- |
-| Files | Read / write / edit files, list directory, search code, send file, view image |
+| Files | Read / write / edit files, list directory, search code, send file, view image, render layout |
 | Commands & Terminal | Run command (Bash), background terminal, Shizuku host actions |
 | Network | Web search, fetch web page, GitHub read, GitHub write |
 | AI Collaboration | Plan mode, todo list, memory, load skill, generate image, ask user, subagents, etc. |
@@ -25,6 +25,22 @@ Tap any tool to open its detail page, which shows:
   asks for consent before every call in Build mode. Write-type actions are always rejected in
   Plan / Ask mode.
 - **Parameters**: each parameter's name, type, whether it is required, and its meaning.
+
+## Layout rendering preview
+
+`renderLayout` turns an Android XML layout file (`res/layout/*.xml`) into a PNG preview:
+
+- Auto-approved and read-only; the PNG is saved under `~/workspace/.aicode/previews/`
+  (one file per layout, latest render wins) and shown in chat — tap the preview row in the
+  tool card (or the phone frame in the editor) to open it full screen.
+- Optional parameters: `theme` (light / dark), `width_dp` and `height_dp` for the viewport.
+- The render is **approximate**: standard framework widgets (text, buttons, images,
+  LinearLayout / FrameLayout / RelativeLayout, and similar) draw faithfully, while custom
+  views, fragments, lists, ConstraintLayout constraint rules, and unsupported attributes
+  become labeled placeholders. Every degradation is reported, and the tool result is marked
+  `approximate` so the AI can tell you what may look different.
+- The code editor shows a phone icon on `.xml` files: tapping it previews the layout you
+  are editing (unsaved edits included), re-rendering as you type.
 
 ## GitHub integration
 

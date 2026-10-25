@@ -80,6 +80,7 @@ import com.aicode.feature.editor.data.EditorSettings
 import com.aicode.feature.editor.domain.TextMateSetup
 import com.aicode.feature.editor.presentation.component.EditorFilesDrawer
 import com.aicode.feature.editor.presentation.component.MarkdownPreviewWebView
+import com.aicode.feature.editor.presentation.component.XmlPreviewPane
 import com.aicode.feature.settings.presentation.component.settingsPageBackground
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronLeft
@@ -89,6 +90,7 @@ import compose.icons.feathericons.Eye
 import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Save
 import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Smartphone
 import compose.icons.feathericons.X
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.ScrollEvent
@@ -138,6 +140,9 @@ fun CodeEditorScreen(
     var previewMode by remember { mutableStateOf(false) }
     val isMarkdown = remember(activePath) {
         activePath.substringAfterLast('.', "").lowercase() in setOf("md", "markdown")
+    }
+    val isXml = remember(activePath) {
+        activePath.substringAfterLast('.', "").lowercase() == "xml"
     }
     var editorBackground by remember { mutableStateOf<Color?>(null) }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -336,6 +341,16 @@ fun CodeEditorScreen(
                     },
                         actions = {
                             val editable = state is EditorUiState.Success
+                            if (isXml && editable) {
+                                // Layout render preview: swaps the editor body for a phone-framed
+                                // snapshot of the current text (see XmlPreviewPane below).
+                                IconButton(onClick = { previewMode = !previewMode }) {
+                                    Icon(
+                                        if (previewMode) FeatherIcons.Code else FeatherIcons.Smartphone,
+                                        contentDescription = stringResource(R.string.editor_xml_preview)
+                                    )
+                                }
+                            }
                             if (isMarkdown && editable) {
                                 IconButton(onClick = { previewMode = !previewMode }) {
                                     Icon(
@@ -439,14 +454,27 @@ fun CodeEditorScreen(
                         val previewText = remember(previewMode) {
                             editorRef.value?.text?.toString() ?: s.content
                         }
-                        MarkdownPreviewWebView(
-                            text = previewText,
-                            path = activePath,
-                            onExitPreview = { previewMode = false },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background)
-                        )
+                        if (isXml) {
+                            // Layout snapshot from the live editor text; refresh re-reads the editor.
+                            XmlPreviewPane(
+                                path = activePath,
+                                editorTextProvider = { editorRef.value?.text?.toString() ?: s.content },
+                                viewModel = viewModel,
+                                onExitPreview = { previewMode = false },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.background)
+                            )
+                        } else {
+                            MarkdownPreviewWebView(
+                                text = previewText,
+                                path = activePath,
+                                onExitPreview = { previewMode = false },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.background)
+                            )
+                        }
                     }
                 }
                 // Success for a document that is not the active tab: the new file's read has

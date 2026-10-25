@@ -600,6 +600,11 @@
     <string name="editor_project_files_tree">Project Files tree</string>
     <string name="editor_md_preview">Preview Markdown</string>
     <string name="editor_md_show_source">Show source</string>
+    <string name="editor_xml_preview">Preview layout render</string>
+    <string name="editor_xml_rendering">Rendering layout…</string>
+    <string name="editor_xml_render_failed">Render failed</string>
+    <string name="editor_xml_render_refresh">Refresh render</string>
+    <string name="editor_xml_render_approximate">Approximate render · %1$d notes</string>
     <string name="editor_indent">Indent</string>
     <string name="editor_cursor_left">Move cursor left</string>
     <string name="editor_cursor_right">Move cursor right</string>
@@ -694,6 +699,7 @@
     <string name="chat_status_updating_todo">Updating to-dos</string>
     <string name="chat_status_starting_subagent">Starting sub-agent</string>
     <string name="chat_status_reading_memory">Reading memory</string>
+    <string name="chat_status_rendering_layout">Rendering layout</string>
     <string name="chat_tool_running">Tool running</string>
     <string name="chat_tool_succeeded">Tool succeeded</string>
     <string name="chat_tool_failed">Tool failed</string>
@@ -1521,6 +1527,8 @@
     <string name="tool_result">Result</string>
     <string name="tool_expand_remaining">Expand remaining %1$s lines</string>
     <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d files</string>
+    <string name="tool_render_row_hint">Tap to open the full preview</string>
+    <string name="tool_render_approximate">Approximate render</string>
 
     <!-- Vision Model -->
     <string name="vision_no_models">No models available. Please add and configure a model in "AI Vendors" before selecting a vision model.</string>

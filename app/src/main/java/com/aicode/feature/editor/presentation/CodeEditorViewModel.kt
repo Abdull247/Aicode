@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Editor page state. */
@@ -75,6 +76,31 @@ class CodeEditorViewModel @Inject constructor(
 
     val settings: StateFlow<EditorSettings> = editorSettings.settingsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EditorSettings())
+
+    /**
+     * Renders the given editor text (the unsaved draft included) as an Android layout
+     * snapshot. Resource lookup still goes through the on-disk res/ tree the file lives in;
+     * only the layout XML body comes from the editor. Returns the raster plus render notes
+     * (FAILED outcome carries the reason in [com.aicode.core.xmlrender.RenderOutcome.errorMessage]).
+     */
+    suspend fun renderLayoutPreview(
+        layoutXml: String,
+        path: String,
+        dark: Boolean,
+        widthDp: Int = com.aicode.core.xmlrender.XmlRenderEngine.DEFAULT_WIDTH_DP,
+        heightDp: Int = com.aicode.core.xmlrender.XmlRenderEngine.DEFAULT_HEIGHT_DP
+    ): com.aicode.core.xmlrender.RenderOutcome =
+        withContext(Dispatchers.Default) {
+            com.aicode.core.xmlrender.XmlRenderEngine.render(
+                context = context,
+                fileAccess = fileAccess,
+                layoutPath = path,
+                widthDp = widthDp,
+                heightDp = heightDp,
+                dark = dark,
+                xmlOverride = layoutXml
+            )
+        }
 
     private var loadedPath: String? = null
     private val buffers = LinkedHashMap<String, FileBuffer>()

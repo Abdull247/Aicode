@@ -96,6 +96,7 @@ import com.aicode.feature.agent.domain.tool.search.WebSearchTool
 import com.aicode.feature.agent.domain.tool.browser.BrowserTool
 import com.aicode.feature.agent.domain.tool.github.GitHubTool
 import com.aicode.feature.agent.domain.tool.github.GitHubWriteTool
+import com.aicode.feature.agent.domain.tool.renderlayout.RenderLayoutTool
 import com.aicode.feature.agent.domain.workflow.ContextCompactor
 import com.aicode.feature.agent.domain.workflow.StatefulAgentWorkflow
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
@@ -380,7 +381,8 @@ object AgentModule {
         messageParentTool: MessageParentTool,
         browserTool: BrowserTool,
         githubTool: GitHubTool,
-        githubWriteTool: GitHubWriteTool
+        githubWriteTool: GitHubWriteTool,
+        renderLayoutTool: RenderLayoutTool
     ): ToolRegistry {
         return ToolRegistry().apply {
             register("readFile", readFileTool)
@@ -411,6 +413,8 @@ object AgentModule {
             // order is schema order, so they do not crowd the front of the tool list.
             register("github", githubTool)
             register("githubWrite", githubWriteTool)
+            // renderLayout goes last: niche preview tool, keep it out of the hot schema zone.
+            register("renderLayout", renderLayoutTool)
         }
     }
 

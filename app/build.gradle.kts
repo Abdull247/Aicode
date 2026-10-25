@@ -457,6 +457,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockK: native Kotlin mocking (coEvery/coVerify coroutine support) for stubbing ViewModel/Repository dependencies
     testImplementation("io.mockk:mockk:1.14.11")
+    // XML layout renderer tests: XmlPullParserFactory needs a real implementation on the JVM (android.jar ships stubs only)
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
 }
 
 ksp {

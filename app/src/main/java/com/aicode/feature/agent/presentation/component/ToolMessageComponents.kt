@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +71,9 @@ import com.aicode.core.theme.Brand
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
+import com.aicode.core.ui.ImageSource
+import com.aicode.core.ui.ImageViewerRequest
+import com.aicode.core.ui.LocalImageViewer
 import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.agent.presentation.AgentUIMessage
 import com.aicode.core.ui.ExpandableChevronIcon
@@ -83,6 +87,7 @@ import compose.icons.feathericons.Database
 import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Search
+import compose.icons.feathericons.Smartphone
 import compose.icons.feathericons.Terminal
 import compose.icons.feathericons.Tool
 import kotlinx.coroutines.withTimeoutOrNull
@@ -173,11 +178,15 @@ internal fun ToolMessageBody(
     val notifications = if (!running) {
         remember(message.id, message.content) { parseToolNotifications(message.content) }
     } else emptyList()
+    // renderLayout result: a slim preview row at the bottom of the expanded card opens the PNG full screen.
+    val renderData = if (message.toolName == "renderLayout" && !running && !message.isError) {
+        remember(message.id, message.content) { parseRenderLayoutResult(message.content) }
+    } else null
 
     // 执行中也可折叠/展开（如 bash 刷屏时可收起只看标题行），无论当前是否有输出；无输出时折叠态无内容，但保持可点击与箭头一致
     val hasLiveOutput = !liveOutput.isNullOrBlank()
     val expandable = streaming || (!running && (edit != null || !resultText.isNullOrBlank() || !argsFull.isNullOrBlank()
-            || (todoData != null && todoData.items.isNotEmpty()) || webSearchData != null))
+            || (todoData != null && todoData.items.isNotEmpty()) || webSearchData != null || renderData != null))
     // 工具调用一律默认收起（差异卡、待办卡也不例外）：要不要看细节由用户点开，
     // 手动开关过（expandedOverride 非 null）就以用户的选择为准。展开态由宿主保管，
     // 因此滚出视口、切页返回都不会再丢。
@@ -362,6 +371,10 @@ internal fun ToolMessageBody(
                         Spacer(Modifier.height(Spacing.sm))
                         ToolSection(label = stringResource(R.string.tool_result), content = resultText)
                     }
+                    renderData?.let { data ->
+                        Spacer(Modifier.height(Spacing.xs))
+                        RenderLayoutResultRow(data)
+                    }
                 }
                 }
             }
@@ -432,6 +445,107 @@ private fun ToolNotificationRow(info: ToolNotificationInfo) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+internal data class RenderLayoutResultInfo(
+    val name: String,
+    val containerPath: String,
+    val status: String
+)
+
+/**
+ * Extracts render preview PNG metadata from a renderLayout transport JSON result. Returns
+ * null for records without a valid render payload (older sessions, failed renders): the
+ * tool card then keeps its plain shape without a preview row.
+ */
+internal fun parseRenderLayoutResult(raw: String): RenderLayoutResultInfo? {
+    val json = parseToolTransport(raw.withoutToolStatusPrefix()) ?: return null
+    val render = json["render"] as? JsonObject ?: return null
+    val name = (render["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        ?: return null
+    val containerPath = (render["container_path"] as? JsonPrimitive)?.contentOrNull
+        ?.takeIf { it.isNotBlank() } ?: return null
+    val status = (json["status"] as? JsonPrimitive)?.contentOrNull
+    return RenderLayoutResultInfo(
+        name = name,
+        containerPath = containerPath,
+        status = if (status == "success") "success" else "approximate"
+    )
+}
+
+/**
+ * Slim preview row at the bottom of an expanded renderLayout card: small rounded icon chip
+ * + file name + hint, deliberately flatter than the sendFile attachment rows. Tapping feeds
+ * the rendered PNG to the built-in full-screen image viewer (same gesture as image
+ * attachments), so the user sees exactly what the AI rendered.
+ */
+@Composable
+private fun RenderLayoutResultRow(data: RenderLayoutResultInfo) {
+    val viewer = LocalImageViewer.current
+    Surface(
+        shape = RoundedCornerShape(Radius.sm),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                viewer.show(
+                    ImageViewerRequest(
+                        sources = listOf(ImageSource.ContainerPath(data.containerPath)),
+                        title = data.name
+                    )
+                )
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs + 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(Radius.xs))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    FeatherIcons.Smartphone,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = data.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = buildString {
+                        if (data.status != "success") {
+                            append(stringResource(R.string.tool_render_approximate))
+                            append(" · ")
+                        }
+                        append(stringResource(R.string.tool_render_row_hint))
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                FeatherIcons.ChevronRight,
+                contentDescription = null,
+                tint = Brand.IconGray,
+                modifier = Modifier.size(14.dp)
+            )
+        }
     }
 }
 
@@ -561,6 +675,7 @@ internal fun toolRunningLabelRes(toolName: String?): Int = when (toolName?.lower
     "todo" -> R.string.chat_status_updating_todo
     "task" -> R.string.chat_status_starting_subagent
     "memory" -> R.string.chat_status_reading_memory
+    "renderlayout" -> R.string.chat_status_rendering_layout
     else -> R.string.chat_status_calling_tool
 }
 
