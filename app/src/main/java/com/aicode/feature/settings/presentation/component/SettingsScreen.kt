@@ -159,6 +159,7 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     PromptEditor(R.string.prompts_title),
     SkillDetail(R.string.settings_skills),
     SkillEditor(R.string.settings_skills),
+    SkillMarket(R.string.skills_market_title),
     SubAgents(R.string.settings_subagents),
     SubAgentDetail(R.string.settings_subagents),
     SubAgentEditor(R.string.settings_subagents),
@@ -194,6 +195,7 @@ private fun SettingsSection.depth(): Int = when (this) {
     SettingsSection.ProviderEditor,
     SettingsSection.PromptDetail,
     SettingsSection.SkillDetail,
+    SettingsSection.SkillMarket,
     SettingsSection.SubAgentDetail,
     SettingsSection.ToolDetail,
     SettingsSection.ContainerDownloads,
@@ -414,6 +416,7 @@ fun SettingsScreen(
         SettingsSection.ProviderEditor -> SettingsSection.Providers
         SettingsSection.Log -> logReturnSection.takeUnless { expanded && it == SettingsSection.Menu }
         SettingsSection.SkillDetail -> SettingsSection.Skills
+        SettingsSection.SkillMarket -> SettingsSection.Skills
         SettingsSection.ToolDetail -> SettingsSection.AvailableTools
         SettingsSection.PromptEditor -> promptEditorReturn
         SettingsSection.PromptDetail -> SettingsSection.Prompts
@@ -636,6 +639,9 @@ fun SettingsScreen(
             // 它的构造即触发一次全盘统计，不能提到 SettingsScreen 顶层（那样每次进设置页都会扫盘）。
             val storageViewModel: com.aicode.feature.settings.presentation.StorageViewModel? =
                 if (current == SettingsSection.Storage) androidx.hilt.navigation.compose.hiltViewModel() else null
+            // 技能市场同理：顶栏刷新与列表内容共用同一实例，且不能离开分区后仍在扫数据。
+            val skillsMarketViewModel: com.aicode.feature.settings.presentation.SkillsMarketViewModel? =
+                if (current == SettingsSection.SkillMarket) androidx.hilt.navigation.compose.hiltViewModel() else null
             Scaffold(
         containerColor = settingsPageBackground(),
         topBar = {
@@ -791,6 +797,16 @@ fun SettingsScreen(
                                 Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs))
                             }
                         }
+                        SettingsSection.SkillMarket -> {
+                            IconButton(onClick = { skillsMarketViewModel?.reload() }) {
+                                Icon(
+                                    FeatherIcons.RefreshCw,
+                                    contentDescription = stringResource(R.string.skills_market_refresh),
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                         SettingsSection.TokenStats -> {
                             IconButton(onClick = { showResetTokenStats = true }) {
                                 Icon(
@@ -938,6 +954,15 @@ fun SettingsScreen(
                         section = SettingsSection.SkillDetail
                     }
                 )
+                SettingsSection.SkillMarket -> {
+                    val marketViewModel = skillsMarketViewModel
+                    if (marketViewModel != null) {
+                        SkillsMarketSection(
+                            viewModel = marketViewModel,
+                            onInstalled = { viewModel.refreshSkills() }
+                        )
+                    }
+                }
                 SettingsSection.AvailableTools -> AvailableToolsSection(
                     entries = toolCatalog,
                     onOpenDetail = {
@@ -1222,6 +1247,10 @@ fun SettingsScreen(
             onPickZip = {
                 showSkillAddSheet = false
                 skillZipLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            },
+            onMarketplace = {
+                showSkillAddSheet = false
+                section = SettingsSection.SkillMarket
             },
             onDismiss = { showSkillAddSheet = false }
         )

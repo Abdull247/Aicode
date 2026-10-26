@@ -1149,6 +1149,23 @@
     <string name="skills_import_error_unsupported_file">unsupported file type</string>
     <string name="skills_import_error_io">failed to write the skill file</string>
 
+    <!-- Skills marketplace -->
+    <string name="skills_market_title">Skills marketplace</string>
+    <string name="skills_add_market">Skills marketplace</string>
+    <string name="skills_add_market_desc">Browse and install skills from the AiCode marketplace</string>
+    <string name="skills_market_all">All</string>
+    <string name="skills_market_refresh">Refresh marketplace</string>
+    <string name="skills_market_error_network">Can\'t reach the marketplace server</string>
+    <string name="skills_market_error_server">The marketplace server reported an error</string>
+    <string name="skills_market_error_detail">Couldn\'t load this skill</string>
+    <string name="skills_market_retry">Retry</string>
+    <string name="skills_market_empty_category">No skills in this category yet</string>
+    <string name="skills_market_scope_note">Will be saved to the current project\'s skills</string>
+    <string name="skills_market_install">Install</string>
+    <string name="skills_market_installing">Installing…</string>
+    <string name="skills_market_installed">Skill installed to this project</string>
+    <string name="skills_market_install_failed">Install failed: %1$s</string>
+
     <!-- Subagent Settings -->
     <string name="settings_subagents">Subagents</string>
     <string name="subagents_empty">No custom subagents yet</string>

@@ -37,6 +37,7 @@ internal fun SkillAddSheet(
     onManual: () -> Unit,
     onPickFile: () -> Unit,
     onPickZip: () -> Unit,
+    onMarketplace: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AdaptiveModalBottomSheet(
@@ -100,6 +101,13 @@ internal fun SkillAddSheet(
                     title = stringResource(R.string.skills_add_from_zip),
                     subtitle = stringResource(R.string.skills_add_from_zip_desc),
                     onClick = onPickZip
+                )
+                SettingsDivider()
+                SettingsRow(
+                    icon = FeatherIcons.DownloadCloud,
+                    title = stringResource(R.string.skills_add_market),
+                    subtitle = stringResource(R.string.skills_add_market_desc),
+                    onClick = onMarketplace
                 )
             }
         }
