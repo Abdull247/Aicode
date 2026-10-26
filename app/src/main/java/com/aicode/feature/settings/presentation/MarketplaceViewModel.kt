@@ -316,7 +316,7 @@ class MarketplaceViewModel @Inject constructor(
                     scope = SkillScope.PROJECT
                 )
             }
-            val failure = error.toInstallFailure()
+            val failure = error?.toInstallFailure()
             if (failure != MarketplaceInstallFailure.NAME_CONFLICT || attempt >= MAX_NAME_ATTEMPTS) {
                 return failure
             }
@@ -376,7 +376,7 @@ class MarketplaceViewModel @Inject constructor(
                     scope = AgentDefinitionScope.PROJECT
                 )
             }
-            val failure = error.toInstallFailure()
+            val failure = error?.toInstallFailure()
             if (failure != MarketplaceInstallFailure.NAME_CONFLICT || attempt >= MAX_NAME_ATTEMPTS) {
                 return failure
             }
