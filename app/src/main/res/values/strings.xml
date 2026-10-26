@@ -1149,6 +1149,37 @@
     <string name="skills_import_error_unsupported_file">unsupported file type</string>
     <string name="skills_import_error_io">failed to write the skill file</string>
 
+    <!-- Skills marketplace -->
+    <string name="skills_market_title">Skills marketplace</string>
+    <string name="skills_add_market">Skills marketplace</string>
+    <string name="skills_add_market_desc">Browse and install skills from the AiCode marketplace</string>
+    <string name="skills_market_all">All</string>
+    <string name="skills_market_refresh">Refresh marketplace</string>
+    <string name="skills_market_error_network">Can\'t reach the marketplace server</string>
+    <string name="skills_market_error_server">The marketplace server reported an error</string>
+    <string name="skills_market_error_detail">Couldn\'t load this skill</string>
+    <string name="skills_market_retry">Retry</string>
+    <string name="skills_market_empty_category">No skills in this category yet</string>
+    <string name="skills_market_scope_note">Will be saved to the current project\'s skills</string>
+    <string name="skills_market_install">Install</string>
+    <string name="skills_market_installing">Installing…</string>
+    <string name="skills_market_installed">Skill installed to this project</string>
+    <string name="skills_market_install_failed">Install failed: %1$s</string>
+    <string name="prompts_market_title">Prompts marketplace</string>
+    <string name="subagents_market_title">Subagents marketplace</string>
+    <string name="prompts_market_scope_note">Will be saved to the current project\'s prompt fragments (global prompts when no workspace is open)</string>
+    <string name="subagents_market_scope_note">Will be saved to the current project\'s subagents</string>
+    <string name="prompts_add_market">Prompt marketplace</string>
+    <string name="prompts_add_market_desc">Browse and install prompt templates from the AiCode marketplace</string>
+    <string name="subagents_market_open">Browse marketplace</string>
+    <string name="prompts_market_empty">No prompt templates on the server yet</string>
+    <string name="subagents_market_empty">No subagents on the server yet</string>
+    <string name="prompts_market_error_detail">Couldn\'t load this template</string>
+    <string name="subagents_market_error_detail">Couldn\'t load this subagent</string>
+    <string name="prompts_market_installed">Template installed</string>
+    <string name="subagents_market_installed">Subagent installed to this project</string>
+    <string name="prompts_market_error_no_slot">All prompt slots (01-99) are taken; delete a fragment to free one</string>
+
     <!-- Subagent Settings -->
     <string name="settings_subagents">Subagents</string>
     <string name="subagents_empty">No custom subagents yet</string>

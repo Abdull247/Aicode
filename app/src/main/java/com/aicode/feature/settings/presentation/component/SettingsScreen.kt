@@ -113,6 +113,7 @@ import compose.icons.feathericons.MessageSquare
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.PieChart
 import compose.icons.feathericons.Plus
+import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Save
 import compose.icons.feathericons.Server
@@ -128,21 +129,21 @@ import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.terminal.data.repository.TerminalSettings
 import com.aicode.feature.terminal.presentation.component.TerminalSettingsSheet
 
-/** 使用手册在线文档站地址。 */
+/** Online docs site for the user manual. */
 private const val USER_GUIDE_DOCS_URL = "https://aicode.murk.top"
 
-/** 大屏设置页左侧常驻菜单宽度。 */
+/** Width of the always-visible menu column on large screens. */
 private val SettingsMenuWidth = 320.dp
 
 /**
- * 设置页走双栏所需的**自身**最小宽度。
+ * Minimum width the settings page itself needs for the two-pane layout.
  *
- * 不能直接拿窗口宽度判定：大屏下设置页左边还有常驻会话侧栏，按窗口算的话
- * 小平板（约 840dp）上扇出三栏，详情区只剩 200dp 不到，根本没法用。
+ * Window width alone is not enough: on large screens a persistent session sidebar sits to the left of settings,
+ * so counting the window would fan out three columns on small tablets (~840dp), leaving under 200dp for details - unusable.
  */
 private val SettingsTwoPaneMinWidth = 840.dp
 
-/** 设置页内部二级菜单分区。Menu 为首页菜单，其余为各自的二级页。 */
+/** Secondary sections inside settings. Menu is the home menu; the rest are their own pages. */
 internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Menu(R.string.settings_title),
     General(R.string.settings_general),
@@ -159,6 +160,9 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     PromptEditor(R.string.prompts_title),
     SkillDetail(R.string.settings_skills),
     SkillEditor(R.string.settings_skills),
+    SkillMarket(R.string.skills_market_title),
+    PromptMarket(R.string.prompts_market_title),
+    SubAgentMarket(R.string.subagents_market_title),
     SubAgents(R.string.settings_subagents),
     SubAgentDetail(R.string.settings_subagents),
     SubAgentEditor(R.string.settings_subagents),
@@ -179,21 +183,24 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
 }
 
 /**
- * 分区层级：0 首页菜单，1 一级分区，2 分区里再翻一层的详情 / 编辑页，3 详情页之上的编辑页。
+ * Section depth: 0 home menu, 1 top-level section, 2 detail/editor page inside a section, 3 editor above a detail page.
  *
- * 只用于判定切换方向（变浅算返回）。[SettingsSection.Log] 的上一层是动态的（见 logReturnSection），
- * 统一当二级算：从菜单直接进它仍是 0 → 2 的「前进」，方向不会反。
+ * Only used to pick the transition direction (shallower means back). [SettingsSection.Log] parent is dynamic (see logReturnSection);
+ * it is treated as depth 2 anyway, so entering from the menu is still a 0 -> 2 forward move and the direction never flips.
  */
 private fun SettingsSection.depth(): Int = when (this) {
     SettingsSection.Menu -> 0
-    // 技能/子代理编辑页既可从列表(1) 进也可从详情页(2) 进，必须比详情页更深：
-    // 同深度会让「编辑 → 详情」也被当成前进，返回时页面从右侧滑入，方向是反的。
+    // Skill/subagent editors can be entered from the list (1) or the detail page (2), so they must sit deeper than the detail page:
+    // equal depth would also count "editor -> detail" as forward, making the return transition slide in from the wrong side.
     SettingsSection.SkillEditor,
     SettingsSection.SubAgentEditor,
     SettingsSection.PromptEditor -> 3
     SettingsSection.ProviderEditor,
     SettingsSection.PromptDetail,
     SettingsSection.SkillDetail,
+    SettingsSection.SkillMarket,
+    SettingsSection.PromptMarket,
+    SettingsSection.SubAgentMarket,
     SettingsSection.SubAgentDetail,
     SettingsSection.ToolDetail,
     SettingsSection.ContainerDownloads,
@@ -360,23 +367,23 @@ fun SettingsScreen(
     val toolCatalog = remember { ToolCatalogLibrary.load(context) }
     var selectedTool by remember { mutableStateOf<ToolCatalogEntry?>(null) }
 
-    // 自定义提示词：右上角「+」弹层可见性 + 编辑目标（新建/编辑/固定片段）
+    // Custom prompts: top-bar "+" sheet visibility plus the edit target (new / edit / pinned fragment)
     var showPromptsAddSheet by remember { mutableStateOf(false) }
     var promptEditTarget by remember { mutableStateOf<PromptEditTarget?>(null) }
     var selectedPrompt by remember { mutableStateOf<PromptFragment?>(null) }
     var showPromptsAnnouncement by remember { mutableStateOf(false) }
-    // 编辑页返回目标：从详情进就回详情，从列表「+」进就回列表。
+    // Editor return target: entered from detail returns to detail, from the list "+" returns to the list.
     var promptEditorReturn by remember { mutableStateOf(SettingsSection.Prompts) }
-    // 技能编辑目标：null 表示新建一个；编辑现有技能时指向被编辑的条目。
+    // Skill edit target: null means creating a new one; when editing, points at the existing entry.
     var editingSkill by remember { mutableStateOf<SkillUiEntry?>(null) }
-    // 编辑页的返回目标：从详情页进就回详情页，从列表顶栏「＋」进就回列表。
+    // Editor return target: entered from detail returns to detail, from the top-bar "+" returns to the list.
     var skillEditorReturn by remember { mutableStateOf(SettingsSection.Skills) }
-    // 保存后要在详情页展示的技能名：列表刷新是异步的，先记名字等刷新完再换快照。
+    // Skill name to show on the detail page after saving: list refresh is async, so remember the name and swap snapshots once done.
     var pendingSkillName by remember { mutableStateOf<String?>(null) }
-    // 「添加技能」底部弹层：选择作用域后走手动新建 / 文件导入 / 压缩包导入。
+    // "Add skill" bottom sheet: pick a scope, then choose manual create / file import / zip import.
     var showSkillAddSheet by remember { mutableStateOf(false) }
     var skillImportScope by remember { mutableStateOf(SkillScope.GLOBAL) }
-    // 技能文件 / 压缩包选择器：结果交给 ViewModel 读取并落盘到所选作用域。
+    // Skill file / zip pickers: the ViewModel reads the result and writes it into the chosen scope.
     val skillFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importSkillFromMarkdown(uri, skillImportScope)
     }
@@ -385,15 +392,15 @@ fun SettingsScreen(
     }
     var selectedSubAgent by remember { mutableStateOf<SubAgentUiEntry?>(null) }
     var subAgentToDelete by remember { mutableStateOf<SubAgentUiEntry?>(null) }
-    // 子代理编辑目标：null 表示新建一个；编辑现有定义时指向被编辑的条目。
+    // Sub-agent edit target: null means creating a new one; when editing, points at the existing definition.
     var editingSubAgent by remember { mutableStateOf<SubAgentUiEntry?>(null) }
-    // 编辑页的返回目标：从详情页进就回详情页，从列表顶栏「＋」进就回列表。
+    // Editor return target: entered from detail returns to detail, from the top-bar "+" returns to the list.
     var subAgentEditorReturn by remember { mutableStateOf(SettingsSection.SubAgents) }
-    // 保存后要在详情页展示的子代理名：列表刷新是异步的，先记名字等刷新完再换快照。
+    // Sub-agent name to show on the detail page after saving: list refresh is async, so remember the name and swap snapshots once done.
     var pendingSubAgentName by remember { mutableStateOf<String?>(null) }
-    // 子代理提示词 Markdown 解析缓存：与技能详情同理，避免重复解析卡顿
+    // Sub-agent prompt markdown parse cache: same idea as skill details, avoids repeat-parsing jank
     val subAgentMarkdownCache = remember { MarkdownRenderCache() }
-    // 技能正文 Markdown 解析缓存：详情页多次进入复用，避免重复解析卡顿
+    // Skill body markdown parse cache: reused across detail visits to avoid repeat-parsing jank
     val skillMarkdownCache = remember { MarkdownRenderCache() }
     var showContainerAddSheet by remember { mutableStateOf(false) }
     var showContainerAnnouncement by remember { mutableStateOf(false) }
@@ -406,14 +413,15 @@ fun SettingsScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     val expanded = maxWidth >= SettingsTwoPaneMinWidth
 
-    // 返回目标：null 表示没有上一层，返回动作交还上层导航（退出设置页）。
-    // 大屏左菜单常驻，一级分区页没有「上一层」——回菜单只会得到一个空占位。
-    // 返回键与顶栏返回箭头共用这一份判定，不再各写一套（之前两处不一致，镜像下载页返回会直接跳回菜单）。
+    // Back target: null means no parent; the back action is handed to outer navigation (leave settings).
+    // The large-screen menu is always visible, so top-level sections have no parent - "back to menu" would only show an empty placeholder.
+    // The system back key and the top-bar arrow share this one decision (they used to diverge, sending the image-download page straight back to the menu).
     val parentSection: SettingsSection? = when (section) {
         SettingsSection.Menu -> null
         SettingsSection.ProviderEditor -> SettingsSection.Providers
         SettingsSection.Log -> logReturnSection.takeUnless { expanded && it == SettingsSection.Menu }
         SettingsSection.SkillDetail -> SettingsSection.Skills
+        SettingsSection.SkillMarket -> SettingsSection.Skills
         SettingsSection.ToolDetail -> SettingsSection.AvailableTools
         SettingsSection.PromptEditor -> promptEditorReturn
         SettingsSection.PromptDetail -> SettingsSection.Prompts
@@ -424,18 +432,18 @@ fun SettingsScreen(
         else -> if (expanded) null else SettingsSection.Menu
     }
 
-    // 有上一层时系统返回键先回上一层；没有则交还给上层导航。
+    // With a parent, the system back key goes there first; without one, outer navigation handles it.
     BackHandler(enabled = parentSection != null) {
         parentSection?.let { section = it }
     }
 
-    // settingsViewModel 为 Activity 级共享实例，每次进入设置页重新扫描技能，反映磁盘增删改。
+    // settingsViewModel is an activity-scoped shared instance; rescan skills on every settings entry to reflect disk changes.
     LaunchedEffect(Unit) {
         viewModel.refreshSkills()
         viewModel.refreshSubAgents()
     }
 
-    // 编辑保存后回详情页：等列表刷新出新快照再换，避免详情页停在保存前的旧值（改名时按新名找）。
+    // After saving, return to the detail page only once the refreshed snapshot arrives (matched by the new name on rename).
     LaunchedEffect(skills, pendingSkillName) {
         val target = pendingSkillName ?: return@LaunchedEffect
         skills.firstOrNull { it.name.equals(target, ignoreCase = true) }?.let { fresh ->
@@ -444,7 +452,7 @@ fun SettingsScreen(
         }
     }
 
-    // 编辑保存后回详情页：等列表刷新出新快照再换，避免详情页停在保存前的旧值（改名时按新名找）。
+    // After saving, return to the detail page only once the refreshed snapshot arrives (matched by the new name on rename).
     LaunchedEffect(subAgents, pendingSubAgentName) {
         val target = pendingSubAgentName ?: return@LaunchedEffect
         subAgents.firstOrNull { it.name.equals(target, ignoreCase = true) }?.let { fresh ->
@@ -453,23 +461,23 @@ fun SettingsScreen(
         }
     }
 
-    // 首次（或公告内容更新后）进入「容器与镜像」页自动弹出使用说明；哈希比对在 ViewModel 完成。
+    // Auto-open the usage notes on first entry to "Container & images" (or after its content changes); the hash comparison happens in the ViewModel.
     LaunchedEffect(section, containerAnnouncementOutdated) {
         if (section == SettingsSection.Container && containerAnnouncementOutdated && containerAnnouncementText.isNotBlank()) {
             showContainerAnnouncement = true
         }
     }
 
-    // 首次（或公告内容更新后）进入「提示词」页自动弹出使用说明公告；哈希比对在 ViewModel 完成。
+    // Auto-open the usage notes on first entry to "Prompts" (or after its content changes); the hash comparison happens in the ViewModel.
     LaunchedEffect(section, promptsAnnouncementOutdated) {
         if (section == SettingsSection.Prompts && promptsAnnouncementOutdated && promptsAnnouncementText.isNotBlank()) {
             showPromptsAnnouncement = true
         }
     }
 
-    // 菜单内容：窄窗当首页用，大屏当常驻左栏用，共用同一份。
-    // 滚动位置必须提到 AnimatedContent 之外持有：菜单页作为分区分支被切走时会被 dispose，
-    // 内部 rememberScrollState 一并丢弃，从二级页返回就跳回顶部。
+    // Menu content: doubles as the home page on narrow windows and the persistent left column on large screens.
+    // Scroll position must be hoisted above AnimatedContent: the menu branch gets disposed when switched away,
+    // and its rememberScrollState is discarded with it, so returning from a section would jump back to the top.
     val menuScrollState = rememberScrollState()
     val menuBody: @Composable () -> Unit = {
         SettingsMenu(
@@ -502,7 +510,7 @@ fun SettingsScreen(
     }
 
     Row(modifier = Modifier.fillMaxSize()) {
-        // 大屏：菜单常驻左栏，右栏只换详情，不再整页来回切。
+        // Large screens: the menu stays in the left column and only the right detail pane swaps, no full-page switches.
         if (expanded) {
             Column(
                 modifier = Modifier
@@ -530,22 +538,22 @@ fun SettingsScreen(
             VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
 
-        // 过渡期间退场页会向左移出自身区域（sizeTransform 为 null 时 AnimatedContent 不裁剪），
-        // 不夹住就会画到大屏左侧常驻菜单上。
+        // During transitions the leaving page slides out of its own bounds (AnimatedContent does not clip when sizeTransform is null),
+        // without clipping it would paint over the persistent menu on the left.
         Box(modifier = Modifier.weight(1f).clipToBounds()) {
-        // 分区切换走整页过渡（顶栏一起滑），而不是瞬切；方向按层级深度定：进更深一层从右来，返回从左来。
+        // Section switches use a full-page transition (top bar included) instead of a snap; direction follows depth: deeper enters from the right, back from the left.
         AnimatedContent(
             targetState = section,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
                 val forward = targetState.depth() >= initialState.depth()
-                // sizeTransform 必须给 null：新旧内容尺寸本就一样，默认的尺寸补间只会让容器裁剪拖影。
+                // sizeTransform must stay null: old and new content are the same size, and the default size tween only causes clipped ghosting.
                 ContentTransform(pageEnter(forward), pageExit(forward), sizeTransform = null)
             },
             label = "settings-section"
         ) { current ->
         when {
-            // 这两页自带顶栏，不能嵌进下面的 Scaffold（会双层顶栏）：窄窗占整屏，大屏占右栏。
+            // These two pages carry their own top bar and cannot nest into the Scaffold below (double top bar): full screen on narrow, right column on large.
             current == SettingsSection.ProviderEditor -> ProviderEditorScreen(
                 viewModel = viewModel,
                 initialProvider = editingProvider,
@@ -570,7 +578,7 @@ fun SettingsScreen(
                 onSave = { form, scope -> viewModel.saveSkill(form, scope, editingSkill?.name) },
                 onSaved = { savedName ->
                     viewModel.clearSkillSaveState()
-                    // 从详情页进来的改完回详情页，但得等新快照到位再展示
+                    // Entered from the detail page: after saving go back to detail, but only render once the fresh snapshot is in place
                     if (skillEditorReturn == SettingsSection.SkillDetail) {
                         pendingSkillName = savedName
                     }
@@ -592,7 +600,7 @@ fun SettingsScreen(
                 onSave = { form, scope -> viewModel.saveSubAgent(form, scope, editingSubAgent?.name) },
                 onSaved = { savedName ->
                     viewModel.clearSubAgentSaveState()
-                    // 从详情页进来的改完回详情页，但得等新快照到位再展示
+                    // Entered from the detail page: after saving go back to detail, but only render once the fresh snapshot is in place
                     if (subAgentEditorReturn == SettingsSection.SubAgentDetail) {
                         pendingSubAgentName = savedName
                     }
@@ -632,10 +640,33 @@ fun SettingsScreen(
                 )
 
             else -> {
-            // 存储页的顶栏刷新按钮与页面内容要共用同一个 ViewModel，故在此分支创建；
-            // 它的构造即触发一次全盘统计，不能提到 SettingsScreen 顶层（那样每次进设置页都会扫盘）。
+            // The storage top-bar refresh button and the page content must share one ViewModel, so it is created in this branch;
+            // its constructor triggers a full storage scan, so it cannot live at SettingsScreen top level (that would rescan on every settings entry).
             val storageViewModel: com.aicode.feature.settings.presentation.StorageViewModel? =
                 if (current == SettingsSection.Storage) androidx.hilt.navigation.compose.hiltViewModel() else null
+            // Marketplace works the same way: the top-bar refresh and the page content share one instance,
+            // and it must not keep polling after leaving the section. One instance per collection type.
+            val marketViewModel: com.aicode.feature.settings.presentation.MarketplaceViewModel? =
+                when (current) {
+                    SettingsSection.SkillMarket ->
+                        androidx.hilt.navigation.compose.hiltViewModel(key = "market-skills")
+                    SettingsSection.PromptMarket ->
+                        androidx.hilt.navigation.compose.hiltViewModel(key = "market-prompts")
+                    SettingsSection.SubAgentMarket ->
+                        androidx.hilt.navigation.compose.hiltViewModel(key = "market-subagents")
+                    else -> null
+                }
+            if (marketViewModel != null) {
+                val marketType = when (current) {
+                    SettingsSection.SkillMarket ->
+                        com.aicode.feature.settings.presentation.MarketplaceType.SKILLS
+                    SettingsSection.PromptMarket ->
+                        com.aicode.feature.settings.presentation.MarketplaceType.PROMPTS
+                    else ->
+                        com.aicode.feature.settings.presentation.MarketplaceType.SUB_AGENTS
+                }
+                LaunchedEffect(marketType) { marketViewModel.bind(marketType) }
+            }
             Scaffold(
         containerColor = settingsPageBackground(),
         topBar = {
@@ -647,7 +678,7 @@ fun SettingsScreen(
                         } else if (current == SettingsSection.SubAgentDetail) {
                             selectedSubAgent?.name ?: stringResource(current.titleRes)
                         } else if (expanded && current == SettingsSection.Menu) {
-                            // 大屏左栏顶部已经写着「设置」，右栏空态不再重复
+                            // The left column already reads "Settings" on large screens, so the empty right pane does not repeat it
                             ""
                         } else {
                             stringResource(current.titleRes)
@@ -659,7 +690,7 @@ fun SettingsScreen(
                     titleContentColor = MaterialTheme.colorScheme.onBackground
                 ),
                 navigationIcon = {
-                    // 大屏一级分区页不给返回箭头：左栏菜单随时可切，退出设置的入口在左栏顶部。
+                    // Top-level sections on large screens get no back arrow: the left menu is always one tap away, and leaving settings lives at its top.
                     if (!expanded || parentSection != null) {
                         IconButton(onClick = {
                             val parent = parentSection
@@ -791,6 +822,18 @@ fun SettingsScreen(
                                 Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs))
                             }
                         }
+                        SettingsSection.SkillMarket,
+                        SettingsSection.PromptMarket,
+                        SettingsSection.SubAgentMarket -> {
+                            IconButton(onClick = { marketViewModel?.reload() }) {
+                                Icon(
+                                    FeatherIcons.RefreshCw,
+                                    contentDescription = stringResource(R.string.skills_market_refresh),
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                         SettingsSection.TokenStats -> {
                             IconButton(onClick = { showResetTokenStats = true }) {
                                 Icon(
@@ -833,6 +876,16 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                        SettingsSection.SubAgents -> {
+                            IconButton(onClick = { section = SettingsSection.SubAgentMarket }) {
+                                Icon(
+                                    FeatherIcons.DownloadCloud,
+                                    contentDescription = stringResource(R.string.subagents_market_open),
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                         SettingsSection.Storage -> {
                             IconButton(onClick = { storageViewModel?.refresh() }) {
                                 Icon(
@@ -855,7 +908,7 @@ fun SettingsScreen(
                 .padding(padding)
         ) {
             when (current) {
-                // 大屏菜单已常驻左栏，右栏在没选中分区时给个占位提示
+                // Large screens: the menu already lives in the left column, so an unselected section shows a placeholder
                 SettingsSection.Menu -> if (expanded) SettingsDetailPlaceholder() else menuBody()
                 SettingsSection.General -> GeneralSettingsSection(
                     autoRemoveStaleModels = autoRemoveStaleModels,
@@ -938,6 +991,36 @@ fun SettingsScreen(
                         section = SettingsSection.SkillDetail
                     }
                 )
+                SettingsSection.SkillMarket -> {
+                    val market = marketViewModel
+                    if (market != null) {
+                        MarketplaceSection(
+                            viewModel = market,
+                            onInstalled = { viewModel.refreshSkills() }
+                        )
+                    }
+                }
+                SettingsSection.PromptMarket -> {
+                    val market = marketViewModel
+                    if (market != null) {
+                        MarketplaceSection(
+                            viewModel = market,
+                            onInstalled = {
+                                // Prompts rescan happens via the prompts section LaunchedEffect
+                                // when the user navigates back, so nothing to refresh here.
+                            }
+                        )
+                    }
+                }
+                SettingsSection.SubAgentMarket -> {
+                    val market = marketViewModel
+                    if (market != null) {
+                        MarketplaceSection(
+                            viewModel = market,
+                            onInstalled = { viewModel.refreshSubAgents() }
+                        )
+                    }
+                }
                 SettingsSection.AvailableTools -> AvailableToolsSection(
                     entries = toolCatalog,
                     onOpenDetail = {
@@ -972,6 +1055,10 @@ fun SettingsScreen(
                                 promptEditorReturn = SettingsSection.Prompts
                                 section = SettingsSection.PromptEditor
                             },
+                            onMarketplace = {
+                                showPromptsAddSheet = false
+                                section = SettingsSection.PromptMarket
+                            },
                             onHelp = {
                                 showPromptsAddSheet = false
                                 showPromptsAnnouncement = true
@@ -996,7 +1083,7 @@ fun SettingsScreen(
                         cache = skillMarkdownCache,
                         onToggle = { enabled ->
                             viewModel.setSkillEnabled(entry.name, enabled, entry.scope)
-                            // 同步更新详情页快照，开关立即响应
+                            // Update the detail snapshot in sync so the toggle reacts immediately
                             selectedSkill = selectedSkill?.copy(disabled = !enabled)
                         }
                     )
@@ -1016,7 +1103,7 @@ fun SettingsScreen(
                         cache = subAgentMarkdownCache,
                         onToggle = { enabled ->
                             viewModel.setSubAgentEnabled(entry.name, enabled, entry.scope)
-                            // 同步更新详情页快照，开关立即响应
+                            // Update the detail snapshot in sync so the toggle reacts immediately
                             selectedSubAgent = selectedSubAgent?.copy(disabled = !enabled)
                         }
                     )
@@ -1044,8 +1131,8 @@ fun SettingsScreen(
                     onDeleteProfile = { viewModel.deleteContainerProfile(it) },
                     onSwitchConfirmed = onStopAllAndCloseTerminal,
                     onResetProfile = { profile ->
-                        // 重置与切换容器同等破坏性：rootfs 整体删掉，AI 会话与终端标签必须全部停掉，
-                        // 否则它们会继续读写正在被删的目录。
+                        // Resetting is as destructive as switching containers: the whole rootfs is removed, so AI sessions and terminal tabs must all stop first,
+                        // otherwise they would keep reading and writing a directory that is being deleted.
                         onStopAllAndCloseTerminal()
                         viewModel.resetContainer(profile)
                     },
@@ -1145,10 +1232,10 @@ fun SettingsScreen(
                         androidx.hilt.navigation.compose.hiltViewModel()
                     PerfPanelSection(viewModel = perfViewModel)
                 }
-                SettingsSection.ProviderEditor -> {} // 已在上方 early return 处理
-                SettingsSection.SkillEditor -> {} // 已在上方 early return 处理
-                SettingsSection.SubAgentEditor -> {} // 已在上方 early return 处理
-                SettingsSection.RemoteServers -> {} // 已在上方 early return 处理
+                SettingsSection.ProviderEditor -> {} // already handled by the early return above
+                SettingsSection.SkillEditor -> {} // already handled by the early return above
+                SettingsSection.SubAgentEditor -> {} // already handled by the early return above
+                SettingsSection.RemoteServers -> {} // already handled by the early return above
                 SettingsSection.About -> AboutSection(
                     updateCheckEnabled = updateCheckEnabled,
                     updateCheckChannel = updateCheckChannel,
@@ -1159,11 +1246,11 @@ fun SettingsScreen(
             }
         }
     }
-        } // else 分支结束（storageViewModel 作用域）
-        } // 详情区 when 结束
-        } // AnimatedContent 结束
-        } // 右栏结束
-    } // Row 结束
+        } // end of the else branch (storageViewModel scope)
+        } // end of the detail-area when
+        } // end of AnimatedContent
+        } // end of the right column
+    } // end of Row
 
     if (showMcpDialog) {
         McpServerEditDialog(
@@ -1222,6 +1309,10 @@ fun SettingsScreen(
             onPickZip = {
                 showSkillAddSheet = false
                 skillZipLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            },
+            onMarketplace = {
+                showSkillAddSheet = false
+                section = SettingsSection.SkillMarket
             },
             onDismiss = { showSkillAddSheet = false }
         )
@@ -1297,7 +1388,7 @@ fun SettingsScreen(
 
     skillToDelete?.let { target ->
         val deleting = skillDeleting == target.name
-        // 删除进行中保持弹窗（转圈），完成后才关闭，避免无反馈地“突然消失”。
+        // Keep the dialog up (spinner) while deletion runs and close it only when done, instead of vanishing without feedback.
         var deleteStarted by remember(target) { mutableStateOf(false) }
         LaunchedEffect(deleteStarted, deleting) {
             if (deleteStarted && !deleting) skillToDelete = null
@@ -1364,7 +1455,7 @@ fun SettingsScreen(
         )
     }
 
-    // 「容器与镜像」使用说明公告：首次进入（或内容更新后）自动弹出，右上角 Info 按钮可随时重看。
+    // "Container & images" usage notes: auto-opened on first entry (or after content updates); the top-bar Info button reopens it anytime.
     if (showContainerAnnouncement) {
         val dismiss = {
             showContainerAnnouncement = false
@@ -1389,8 +1480,8 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (containerAnnouncementText.isNotBlank()) {
-                        // mikepenz Markdown 内部是 Column（非 LazyColumn），本身不可滚动，
-                        // 必须由外层提供滚动容器，否则超出弹窗高度的内容被直接裁剪。
+                        // The mikepenz markdown renderer lays out into a Column (not a LazyColumn) and cannot scroll by itself,
+                        // so the surrounding container must provide scrolling, or content taller than the dialog gets clipped.
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -1429,7 +1520,7 @@ fun SettingsScreen(
         }
     }
 
-    // 提示词使用说明公告：首次进入（或内容更新后）自动弹出，右上角 Info 按钮可随时重看。
+    // Prompts usage notes: auto-opened on first entry (or after content updates); the top-bar Info button reopens it anytime.
     if (showPromptsAnnouncement) {
         val dismiss = {
             showPromptsAnnouncement = false
@@ -1454,8 +1545,8 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (promptsAnnouncementText.isNotBlank()) {
-                        // mikepenz Markdown 内部是 Column（非 LazyColumn），本身不可滚动，
-                        // 必须由外层提供滚动容器，否则超出弹窗高度的内容被直接裁剪。
+                        // The mikepenz markdown renderer lays out into a Column (not a LazyColumn) and cannot scroll by itself,
+                        // so the surrounding container must provide scrolling, or content taller than the dialog gets clipped.
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -1493,10 +1584,10 @@ fun SettingsScreen(
             }
         }
     }
-    } // BoxWithConstraints 结束
+    } // end of BoxWithConstraints
 }
 
-/** 大屏右栏未选中分区时的占位提示。 */
+/** Placeholder shown in the large-screen right pane when no section is selected. */
 @Composable
 private fun SettingsDetailPlaceholder() {
     Box(
@@ -1511,7 +1602,7 @@ private fun SettingsDetailPlaceholder() {
     }
 }
 
-/** 设置首页：每个分区一个可点击的二级菜单入口。 */
+/** Settings home: one tappable menu entry per section. */
 @Composable
 internal fun SettingsMenu(
     scrollState: ScrollState,
@@ -1538,7 +1629,7 @@ internal fun SettingsMenu(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        // ── 通用设置 ──
+        // -- General --
         SettingsGroupHeader(text = stringResource(R.string.settings_category_general))
         SettingsGroup {
             SettingsRow(
@@ -1606,7 +1697,7 @@ internal fun SettingsMenu(
             )
         }
 
-        // ── AI 配置 ──
+        // -- AI configuration --
         SettingsGroupHeader(text = stringResource(R.string.settings_category_ai))
         SettingsGroup {
             SettingsRow(
@@ -1654,7 +1745,7 @@ internal fun SettingsMenu(
             )
         }
 
-        // ── 运行环境 ──
+        // -- Runtime environment --
         SettingsGroupHeader(text = stringResource(R.string.settings_category_environment))
         SettingsGroup {
             SettingsRow(
@@ -1682,7 +1773,7 @@ internal fun SettingsMenu(
             )
         }
 
-        // ── 权限与后台 ──
+        // -- Permissions & background --
         SettingsGroupHeader(text = stringResource(R.string.settings_category_permissions))
         SettingsGroup {
             SettingsRow(
@@ -1704,7 +1795,7 @@ internal fun SettingsMenu(
             )
         }
 
-        // ── 数据与诊断 ──
+        // -- Data & diagnostics --
         SettingsGroupHeader(text = stringResource(R.string.settings_category_data))
         SettingsGroup {
             SettingsRow(
@@ -1738,7 +1829,7 @@ internal fun SettingsMenu(
             )
         }
 
-        // ── 帮助与关于 ──
+        // -- Help & about --
         SettingsGroupHeader(text = stringResource(R.string.settings_category_help))
         SettingsGroup {
             SettingsRow(
@@ -1763,7 +1854,7 @@ internal fun SettingsMenu(
 
 }
 
-/** 导入结果弹窗：导入中显示转圈；完成时展示成功数量与逐个跳过原因（整体失败则直接报错误）。 */
+/** Import result dialog: shows a spinner while importing; on completion lists success counts and per-file skip reasons (or the overall error). */
 @Composable
 private fun SkillImportResultDialog(state: SkillImportState, onDismiss: () -> Unit) {
     when (state) {

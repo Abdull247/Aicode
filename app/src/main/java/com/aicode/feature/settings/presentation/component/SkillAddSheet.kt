@@ -22,6 +22,7 @@ import com.aicode.core.theme.Spacing
 import com.aicode.feature.agent.domain.skill.SkillScope
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Archive
+import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.FileText
 
@@ -37,6 +38,7 @@ internal fun SkillAddSheet(
     onManual: () -> Unit,
     onPickFile: () -> Unit,
     onPickZip: () -> Unit,
+    onMarketplace: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AdaptiveModalBottomSheet(
@@ -100,6 +102,13 @@ internal fun SkillAddSheet(
                     title = stringResource(R.string.skills_add_from_zip),
                     subtitle = stringResource(R.string.skills_add_from_zip_desc),
                     onClick = onPickZip
+                )
+                SettingsDivider()
+                SettingsRow(
+                    icon = FeatherIcons.DownloadCloud,
+                    title = stringResource(R.string.skills_add_market),
+                    subtitle = stringResource(R.string.skills_add_market_desc),
+                    onClick = onMarketplace
                 )
             }
         }
