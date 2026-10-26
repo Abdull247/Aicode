@@ -55,24 +55,25 @@ import com.aicode.feature.settings.presentation.PromptsUiState
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.FileText
+import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.Info
 import compose.icons.feathericons.Plus
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
- * 编辑目标：区分「新建」与「编辑既有编号」。
+ * Edit target: tells "new fragment" apart from "editing an existing number".
  *
- * - [number] = null：新建一条编号片段
- * - 非 null：编辑该编号最终生效的片段
+ * - [number] = null: create a new numbered fragment
+ * - otherwise: edit the fragment currently in effect for that number
  */
 internal data class PromptEditTarget(val number: Int? = null)
 
 /**
- * 提示词页：顶部是「完全禁用内置提示词」开关与帮助入口，下面是按编号列出的生效片段。
+ * Prompts page: the "fully disable builtin prompts" switch and help entry on top, the effective fragments listed by number below.
  *
- * 每行一张卡片（图标 + 编号·名称 + 摘要 + 来源徽章），长按行内容可拖拽调整顺序，
- * 点击进入详情预览（右上角再进编辑），来源可写时左滑删除。
+ * Each row is a card (icon + number-name + summary + source badge); long-press the row content to drag-reorder,
+ * tap for the detail preview (edit from the top bar there), swipe left to delete when the source is writable.
  */
 @Composable
 internal fun PromptsSection(
@@ -117,8 +118,8 @@ internal fun PromptsSection(
 }
 
 /**
- * 片段列表。拖拽时只更新本地顺序（不落盘），松手才把最终顺序交给 [onReorder] 持久化，
- * 避免拖动过程中反复写盘 + 重读导致列表抽搐。
+ * Fragment list. While dragging only the local order updates (nothing written); the final order is handed to [onReorder] on drop,
+ * avoiding the list stutter that repeated write + re-read cycles during a drag would cause.
  */
 @Composable
 private fun PromptList(
@@ -186,7 +187,7 @@ private fun PromptList(
                             },
                             onDragStopped = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                                // 立即重编号（槽化），与落盘后的编号一致，避免 key 变化引起列表跳动
+                                // Renumber immediately (slotted) to match what gets persisted, so key changes do not make the list jump
                                 val numbers = localFragments.map { it.number }.sorted()
                                 val renumbered = localFragments.mapIndexed { index, item ->
                                     item.copy(number = numbers[index])
@@ -203,13 +204,14 @@ private fun PromptList(
 }
 
 /**
- * 右上角「+」弹层：两项入口（添加片段 / 帮助）。
+ * Top-bar "+" sheet: three entries (add fragment / marketplace / help).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PromptsAddSheet(
     onDismiss: () -> Unit,
     onAddFragment: () -> Unit,
+    onMarketplace: () -> Unit,
     onHelp: () -> Unit
 ) {
     AdaptiveModalBottomSheet(onDismissRequest = onDismiss) {
@@ -229,6 +231,13 @@ internal fun PromptsAddSheet(
                 )
                 SettingsDivider()
                 SettingsRow(
+                    icon = FeatherIcons.DownloadCloud,
+                    title = stringResource(R.string.prompts_add_market),
+                    subtitle = stringResource(R.string.prompts_add_market_desc),
+                    onClick = onMarketplace
+                )
+                SettingsDivider()
+                SettingsRow(
                     icon = FeatherIcons.Info,
                     title = stringResource(R.string.prompts_help),
                     subtitle = stringResource(R.string.prompts_help_hint),
@@ -239,7 +248,7 @@ internal fun PromptsAddSheet(
     }
 }
 
-/** 单条片段行：图标 + 编号·名称 + 摘要 + 来源徽章 + 箭头；长按内容区拖拽排序，左滑删除。 */
+/** One fragment row: icon + number-name + summary + source badge + chevron; long-press to drag-reorder, swipe left to delete. */
 @Composable
 private fun PromptRow(
     fragment: PromptFragment,
@@ -312,7 +321,7 @@ private fun PromptRow(
     SwipeToDeleteRow(onDelete = onDelete, onClick = onClick, deleteEnabled = deleteEnabled) { row() }
 }
 
-/** 来源徽章：一眼看出该编号的内容来自哪一层。 */
+/** Source badge: shows at a glance which layer a number comes from. */
 @Composable
 private fun SourceBadge(source: PromptFragmentSource) {
     val color = when (source) {

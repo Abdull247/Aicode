@@ -1,5 +1,6 @@
 package com.aicode.feature.settings.presentation.component
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,61 +44,64 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Book
+import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.FileText
+import compose.icons.feathericons.Users
+import compose.icons.feathericons.WifiOff
 import com.aicode.R
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
 import com.aicode.core.ui.AdaptiveModalBottomSheet
 import com.aicode.feature.settings.data.remote.MarketplaceCategory
-import com.aicode.feature.settings.data.remote.MarketplaceSkillDetail
-import com.aicode.feature.settings.data.remote.MarketplaceSkillSummary
-import com.aicode.feature.settings.presentation.SkillsMarketInstallFailure
-import com.aicode.feature.settings.presentation.SkillsMarketUiState
-import com.aicode.feature.settings.presentation.SkillsMarketViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Book
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.WifiOff
+import com.aicode.feature.settings.presentation.MarketplaceDetailUi
+import com.aicode.feature.settings.presentation.MarketplaceInstallFailure
+import com.aicode.feature.settings.presentation.MarketplaceRow
+import com.aicode.feature.settings.presentation.MarketplaceType
+import com.aicode.feature.settings.presentation.MarketplaceUiState
+import com.aicode.feature.settings.presentation.MarketplaceViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import android.widget.Toast
 
 /**
- * 技能市场分区页：顶部分类筛选条 + 居中骨架 / 列表；列表点击行弹出详情底部弹层，
- * 弹层里一键安装到当前项目。列表滚动接近底部自动翻页。
+ * Marketplace section page for one collection type: category filter chips
+ * (skills only) on top, then the centered skeleton or the list. Tapping a row
+ * opens the detail bottom sheet with a one-tap install; the list auto-pages
+ * when scrolled near the bottom.
  */
 @Composable
-internal fun SkillsMarketSection(
-    viewModel: SkillsMarketViewModel,
+internal fun MarketplaceSection(
+    viewModel: MarketplaceViewModel,
     onInstalled: () -> Unit
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) { viewModel.load() }
-
-    // 安装成功：提示 + 关弹层 + 通知 SettingsScreen 重扫本地技能列表。
+    // Install success: toast + close the sheet + notify SettingsScreen to rescan.
     LaunchedEffect(state.lastInstalledName) {
         state.lastInstalledName?.let {
-            Toast.makeText(context, context.getString(R.string.skills_market_installed), Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(installedRes(state.type)), Toast.LENGTH_SHORT).show()
             viewModel.clearInstallFeedback()
             viewModel.dismissDetail()
             onInstalled()
         }
     }
 
-    // 安装失败：按原因映射文案提示，清掉一次性反馈。
+    // Install failure: map the reason to a message, then clear one-shot feedback.
     LaunchedEffect(state.installFailure) {
         state.installFailure?.let { failure ->
             val reasonRes = when (failure) {
-                SkillsMarketInstallFailure.NETWORK -> R.string.skills_market_error_network
-                SkillsMarketInstallFailure.SERVER -> R.string.skills_market_error_server
-                SkillsMarketInstallFailure.INVALID_NAME -> R.string.skills_import_error_invalid_name
-                SkillsMarketInstallFailure.NAME_CONFLICT -> R.string.skills_import_error_name_conflict
-                SkillsMarketInstallFailure.EMPTY_CONTENT -> R.string.skills_import_error_empty_content
-                SkillsMarketInstallFailure.IO -> R.string.skills_import_error_io
+                MarketplaceInstallFailure.NETWORK -> R.string.skills_market_error_network
+                MarketplaceInstallFailure.SERVER -> R.string.skills_market_error_server
+                MarketplaceInstallFailure.INVALID_NAME -> R.string.skills_import_error_invalid_name
+                MarketplaceInstallFailure.NAME_CONFLICT -> R.string.skills_import_error_name_conflict
+                MarketplaceInstallFailure.EMPTY_CONTENT -> R.string.skills_import_error_empty_content
+                MarketplaceInstallFailure.NO_SLOT -> R.string.prompts_market_error_no_slot
+                MarketplaceInstallFailure.IO -> R.string.skills_import_error_io
             }
             val message = context.getString(R.string.skills_market_install_failed, context.getString(reasonRes))
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -105,7 +110,11 @@ internal fun SkillsMarketSection(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (!state.loading && !state.loadFailed && state.categories.isNotEmpty()) {
+        if (state.type == MarketplaceType.SKILLS &&
+            !state.loading &&
+            !state.loadFailed &&
+            state.categories.isNotEmpty()
+        ) {
             CategoryChipRow(
                 categories = state.categories,
                 selectedCategoryId = state.selectedCategoryId,
@@ -118,7 +127,7 @@ internal fun SkillsMarketSection(
                     CircularProgressIndicator()
                 }
                 state.loadFailed -> LoadFailedPane(onRetry = viewModel::reload)
-                else -> SkillListPane(
+                else -> ListPane(
                     state = state,
                     viewModel = viewModel
                 )
@@ -136,7 +145,20 @@ internal fun SkillsMarketSection(
     }
 }
 
-/** 顶部分类筛选条：「全部」+ 服务端分类，横向滑动。 */
+private fun installedRes(type: MarketplaceType): Int = when (type) {
+    MarketplaceType.SKILLS -> R.string.skills_market_installed
+    MarketplaceType.PROMPTS -> R.string.prompts_market_installed
+    MarketplaceType.SUB_AGENTS -> R.string.subagents_market_installed
+}
+
+/** Row icon per collection type. */
+private fun rowIcon(type: MarketplaceType): ImageVector = when (type) {
+    MarketplaceType.SKILLS -> FeatherIcons.Book
+    MarketplaceType.PROMPTS -> FeatherIcons.FileText
+    MarketplaceType.SUB_AGENTS -> FeatherIcons.Users
+}
+
+/** Top category filter: "All" plus server categories, horizontally scrollable. Skills only. */
 @Composable
 private fun CategoryChipRow(
     categories: List<MarketplaceCategory>,
@@ -165,16 +187,16 @@ private fun CategoryChipRow(
     }
 }
 
-/** 列表主体：空态 / 带自动翻页的技能列表。 */
+/** List body: empty state / auto-paging item list. */
 @Composable
-private fun SkillListPane(
-    state: SkillsMarketUiState,
-    viewModel: SkillsMarketViewModel
+private fun ListPane(
+    state: MarketplaceUiState,
+    viewModel: MarketplaceViewModel
 ) {
-    if (state.skills.isEmpty()) {
+    if (state.rows.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                text = stringResource(R.string.skills_market_empty_category),
+                text = stringResource(emptyRes(state.type)),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -185,7 +207,7 @@ private fun SkillListPane(
     }
 
     val listState = rememberLazyListState()
-    // 无限滚动：可见项接近列表末尾就翻下一页。
+    // Infinite scroll: fetch the next page once the last visible item nears the end.
     LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo }
             .collect { info ->
@@ -211,8 +233,12 @@ private fun SkillListPane(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        itemsIndexed(state.skills, key = { _, item -> item.id }) { _, summary ->
-            MarketplaceSkillRow(summary = summary, onClick = { viewModel.openDetail(summary) })
+        itemsIndexed(state.rows, key = { _, item -> item.id }) { _, row ->
+            MarketplaceItemRow(
+                row = row,
+                icon = rowIcon(state.type),
+                onClick = { viewModel.openDetail(row) }
+            )
         }
         if (state.appendingPage) {
             item(key = "appending") {
@@ -224,10 +250,17 @@ private fun SkillListPane(
     }
 }
 
-/** 单个市场技能行：图标 + 名称/描述 + 右箭头，样式对齐技能列表。 */
+private fun emptyRes(type: MarketplaceType): Int = when (type) {
+    MarketplaceType.SKILLS -> R.string.skills_market_empty_category
+    MarketplaceType.PROMPTS -> R.string.prompts_market_empty
+    MarketplaceType.SUB_AGENTS -> R.string.subagents_market_empty
+}
+
+/** One marketplace row: icon + name/description + chevron, styled like the local lists. */
 @Composable
-private fun MarketplaceSkillRow(
-    summary: MarketplaceSkillSummary,
+private fun MarketplaceItemRow(
+    row: MarketplaceRow,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
     Box(
@@ -249,7 +282,7 @@ private fun MarketplaceSkillRow(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = FeatherIcons.Book,
+                    imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
@@ -258,14 +291,14 @@ private fun MarketplaceSkillRow(
             Spacer(modifier = Modifier.width(Spacing.md))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = summary.name,
+                    text = row.name,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = summary.description,
+                    text = row.description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -283,7 +316,7 @@ private fun MarketplaceSkillRow(
     }
 }
 
-/** 整页加载失败：离线图标 + 文案 + 重试按钮。 */
+/** Full-page load failure: offline icon + message + retry button. */
 @Composable
 private fun LoadFailedPane(onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(horizontal = Spacing.xl), contentAlignment = Alignment.Center) {
@@ -310,11 +343,11 @@ private fun LoadFailedPane(onRetry: () -> Unit) {
     }
 }
 
-/** 详情底部弹层：元信息 + 描述 + 安装按钮。 */
+/** Detail bottom sheet: meta line + description + install button. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailSheet(
-    state: SkillsMarketUiState,
+    state: MarketplaceUiState,
     onRetryDetail: () -> Unit,
     onInstall: () -> Unit,
     onDismiss: () -> Unit
@@ -345,7 +378,7 @@ private fun DetailSheet(
                     modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.lg)
                 ) {
                     Text(
-                        text = stringResource(R.string.skills_market_error_detail),
+                        text = stringResource(detailErrorRes(state.type)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -358,6 +391,7 @@ private fun DetailSheet(
                     if (detail != null) {
                         DetailContent(
                             detail = detail,
+                            type = state.type,
                             installing = state.installingId != null,
                             onInstall = onInstall
                         )
@@ -368,9 +402,22 @@ private fun DetailSheet(
     }
 }
 
+private fun detailErrorRes(type: MarketplaceType): Int = when (type) {
+    MarketplaceType.SKILLS -> R.string.skills_market_error_detail
+    MarketplaceType.PROMPTS -> R.string.prompts_market_error_detail
+    MarketplaceType.SUB_AGENTS -> R.string.subagents_market_error_detail
+}
+
+private fun scopeNoteRes(type: MarketplaceType): Int = when (type) {
+    MarketplaceType.SKILLS -> R.string.skills_market_scope_note
+    MarketplaceType.PROMPTS -> R.string.prompts_market_scope_note
+    MarketplaceType.SUB_AGENTS -> R.string.subagents_market_scope_note
+}
+
 @Composable
 private fun DetailContent(
-    detail: MarketplaceSkillDetail,
+    detail: MarketplaceDetailUi,
+    type: MarketplaceType,
     installing: Boolean,
     onInstall: () -> Unit
 ) {
@@ -401,8 +448,17 @@ private fun DetailContent(
         )
     }
 
+    // Sub-agents show their behavior fields (mode / effort / inject) as one extra line.
+    if (!detail.metaLine.isNullOrBlank()) {
+        Text(
+            text = detail.metaLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
     Text(
-        text = stringResource(R.string.skills_market_scope_note),
+        text = stringResource(scopeNoteRes(type)),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -426,7 +482,7 @@ private fun DetailContent(
     }
 }
 
-/** ISO 时间转本地化日期；解析失败返回 null（不展示该行）。 */
+/** ISO timestamp to localized date; null (line hidden) when parsing fails. */
 private fun formatPublishedDate(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
     return runCatching {

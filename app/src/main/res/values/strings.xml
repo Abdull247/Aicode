@@ -1165,6 +1165,20 @@
     <string name="skills_market_installing">Installing…</string>
     <string name="skills_market_installed">Skill installed to this project</string>
     <string name="skills_market_install_failed">Install failed: %1$s</string>
+    <string name="prompts_market_title">Prompts marketplace</string>
+    <string name="subagents_market_title">Subagents marketplace</string>
+    <string name="prompts_market_scope_note">Will be saved to the current project\'s prompt fragments (global prompts when no workspace is open)</string>
+    <string name="subagents_market_scope_note">Will be saved to the current project\'s subagents</string>
+    <string name="prompts_add_market">Prompt marketplace</string>
+    <string name="prompts_add_market_desc">Browse and install prompt templates from the AiCode marketplace</string>
+    <string name="subagents_market_open">Browse marketplace</string>
+    <string name="prompts_market_empty">No prompt templates on the server yet</string>
+    <string name="subagents_market_empty">No subagents on the server yet</string>
+    <string name="prompts_market_error_detail">Couldn\'t load this template</string>
+    <string name="subagents_market_error_detail">Couldn\'t load this subagent</string>
+    <string name="prompts_market_installed">Template installed</string>
+    <string name="subagents_market_installed">Subagent installed to this project</string>
+    <string name="prompts_market_error_no_slot">All prompt slots (01-99) are taken; delete a fragment to free one</string>
 
     <!-- Subagent Settings -->
     <string name="settings_subagents">Subagents</string>
