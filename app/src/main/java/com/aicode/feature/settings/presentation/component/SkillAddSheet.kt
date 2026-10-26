@@ -22,6 +22,7 @@ import com.aicode.core.theme.Spacing
 import com.aicode.feature.agent.domain.skill.SkillScope
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Archive
+import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.FileText
 

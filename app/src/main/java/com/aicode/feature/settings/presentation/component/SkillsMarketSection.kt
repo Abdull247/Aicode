@@ -54,6 +54,7 @@ import com.aicode.feature.settings.presentation.SkillsMarketInstallFailure
 import com.aicode.feature.settings.presentation.SkillsMarketUiState
 import com.aicode.feature.settings.presentation.SkillsMarketViewModel
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Book
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.WifiOff
 import java.time.Instant
