@@ -330,7 +330,7 @@ class InstaboxTool @Inject constructor(
         val language = (argString(args, "language") ?: "python").lowercase()
         val (ext, runner) = when (language) {
             "javascript", "js" -> ".mjs" to "node"
-            "typescript", "ts" -> ".ts" to "bash -lc 'command -v bun >/dev/null && bun \"$FILE\" || npx --yes tsx \"$FILE\"'"
+            "typescript", "ts" -> ".ts" to "bash -lc 'command -v bun >/dev/null && bun \"\$FILE\" || npx --yes tsx \"\$FILE\"'"
             "bash", "sh", "shell" -> ".sh" to "bash"
             else -> ".py" to "python3"
         }

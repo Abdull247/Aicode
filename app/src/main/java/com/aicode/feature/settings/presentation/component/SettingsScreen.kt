@@ -1242,6 +1242,7 @@ fun SettingsScreen(
                 SettingsSection.SkillEditor -> {} // already handled by the early return above
                 SettingsSection.SubAgentEditor -> {} // already handled by the early return above
                 SettingsSection.RemoteServers -> {} // already handled by the early return above
+                SettingsSection.RemoteEnvironments -> {} // already handled by the early return above
                 SettingsSection.About -> AboutSection(
                     updateCheckEnabled = updateCheckEnabled,
                     updateCheckChannel = updateCheckChannel,
