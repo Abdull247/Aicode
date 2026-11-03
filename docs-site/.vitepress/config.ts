@@ -135,6 +135,7 @@ export default defineConfig({
           items: [
             { text: '容器与镜像', link: '/guide/container' },
             { text: '远程 SSH 模式', link: '/guide/remote-ssh' },
+            { text: '远程环境', link: '/guide/remote-environments' },
             { text: '工作区同步', link: '/guide/sync' },
             { text: '网络代理', link: '/guide/proxy' }
           ]

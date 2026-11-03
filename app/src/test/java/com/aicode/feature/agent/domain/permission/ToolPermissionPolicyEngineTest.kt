@@ -174,6 +174,54 @@ class ToolPermissionPolicyEngineTest {
         assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
     }
 
+    @Test
+    fun planMode_deniesLinuxMachineWrite() = runTest {
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.EXECUTE_COMMANDS, ToolCapability.NETWORK_WRITE, ToolCapability.EXTERNAL_TOOL),
+            "linux_machine",
+            mapOf("action" to JsonPrimitive("run_command")),
+            AgentMode.PLAN
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun planMode_allowsLinuxMachineRead() = runTest {
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.NETWORK_READ),
+            "linux_machine",
+            mapOf("action" to JsonPrimitive("info")),
+            AgentMode.PLAN
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+    }
+
+    @Test
+    fun askMode_deniesLinuxMachineWrite() = runTest {
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.EXECUTE_COMMANDS, ToolCapability.NETWORK_WRITE, ToolCapability.EXTERNAL_TOOL),
+            "linux_machine",
+            mapOf("action" to JsonPrimitive("files_write")),
+            AgentMode.ASK
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun askMode_allowsLinuxMachineRead() = runTest {
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.NETWORK_READ),
+            "linux_machine",
+            mapOf("action" to JsonPrimitive("files_list")),
+            AgentMode.ASK
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+    }
+
     // ── 只读 Agent 配置自动放行 ─────────────────────────────────────
 
     @Test

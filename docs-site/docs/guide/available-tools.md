@@ -14,7 +14,7 @@ Tools are grouped into five categories. Tap a group title to collapse or expand 
 | --- | --- |
 | Files | Read / write / edit files, list directory, search code, send file, view image, render layout |
 | Commands & Terminal | Run command (Bash), background terminal, Shizuku host actions |
-| Network | Web search, fetch web page, GitHub read, GitHub write |
+| Network | Web search, fetch web page, GitHub read, GitHub write, remote Linux machine |
 | AI Collaboration | Plan mode, todo list, memory, load skill, generate image, ask user, subagents, etc. |
 | Extensions | MCP management, built-in browser |
 
@@ -73,6 +73,16 @@ requests, submit PR reviews (approve / request changes / comment), and merge PRs
 
 The token is stored only in the app's private directory (shared with Git push/pull
 credentials) and never appears in conversation content.
+
+## Remote Linux machine (InstaBox)
+
+`linux_machine` talks to a persistent InstaBox cloud Linux computer (home `/data/home`).
+It appears in the tool list only after you enable InstaBox and save an API key in
+**Settings → Remote Environments**. Write actions need confirmation in Build mode and
+are blocked in Plan / Ask; read-only actions (`info`, `list`, `files_list`, `files_read`,
+`files_exists`, `list_ports`, `desktop_status`, `metrics`) stay available.
+
+See [Remote Environments](/guide/remote-environments) for setup.
 
 ### Common failures and fixes
 

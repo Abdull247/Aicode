@@ -2,6 +2,7 @@ package com.aicode.feature.agent.domain.permission
 
 import com.aicode.feature.agent.domain.tool.AgentTool
 import com.aicode.feature.agent.domain.tool.ToolCapability
+import com.aicode.feature.agent.domain.tool.instabox.InstaboxTool
 import com.aicode.feature.settings.data.repository.CommandAuthLevel
 import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import kotlinx.serialization.json.JsonElement
@@ -80,6 +81,8 @@ class ToolPermissionPolicyEngine @Inject constructor(
          */
         const val BROWSER_TOOL = "browser"
         private val BROWSER_READ_ONLY_ACTIONS = setOf("getText", "getHtml", "getBackbone", "screenshot", "console", "wait", "listTabs")
+
+        const val LINUX_MACHINE_TOOL = "linux_machine"
 
         /**
          * 提权参数：命令因内置安全防护（灾难性 rm）被拒时，
@@ -223,6 +226,10 @@ class ToolPermissionPolicyEngine @Inject constructor(
         if (toolName == BROWSER_TOOL) {
             val action = (args["action"] as? JsonPrimitive)?.content?.trim()
             return action !in BROWSER_READ_ONLY_ACTIONS
+        }
+        if (toolName == LINUX_MACHINE_TOOL) {
+            val action = InstaboxTool.cleanAction((args["action"] as? JsonPrimitive)?.content)
+            return action !in InstaboxTool.READ_ONLY_ACTIONS
         }
         return false
     }

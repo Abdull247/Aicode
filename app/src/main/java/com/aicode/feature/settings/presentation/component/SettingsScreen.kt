@@ -175,6 +175,7 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     AppPermissions(R.string.settings_app_permissions),
     BackgroundRun(R.string.settings_category_background),
     RemoteServers(R.string.settings_remote_servers),
+    RemoteEnvironments(R.string.settings_remote_environments),
     Storage(R.string.settings_storage),
     TokenStats(R.string.settings_token_stats_title),
     PerfPanel(R.string.perf_panel_title),
@@ -636,6 +637,11 @@ fun SettingsScreen(
 
             current == SettingsSection.RemoteServers ->
                 com.aicode.feature.workspace.presentation.remote.RemoteServerScreen(
+                    onNavigateBack = { section = SettingsSection.Menu }
+                )
+
+            current == SettingsSection.RemoteEnvironments ->
+                RemoteEnvironmentsScreen(
                     onNavigateBack = { section = SettingsSection.Menu }
                 )
 
@@ -1770,6 +1776,13 @@ internal fun SettingsMenu(
                 icon = FeatherIcons.Server,
                 title = stringResource(SettingsSection.RemoteServers.titleRes),
                 onClick = { onOpen(SettingsSection.RemoteServers) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Cloud,
+                title = stringResource(SettingsSection.RemoteEnvironments.titleRes),
+                subtitle = stringResource(R.string.settings_remote_environments_subtitle),
+                onClick = { onOpen(SettingsSection.RemoteEnvironments) }
             )
         }
 

@@ -51,6 +51,7 @@
 | 容器与镜像 | 本地 Linux 容器、自定义镜像、挂载手机目录、远程 SSH 后端 → [文档](/guide/container) |
 | 网络代理 | 全局代理与供应商级代理（1.11.0 起）→ [文档](/guide/proxy) |
 | 连接与同步 | SFTP / FTP 通道、工作区同步、内置 FTP 服务端 → [文档](/guide/sync) |
+| 远程环境 | InstaBox 云端 Linux 机器（`linux_machine` 工具），E2B 占位 → [文档](/guide/remote-environments) |
 
 ### 权限与后台
 

@@ -96,6 +96,7 @@ import com.aicode.feature.agent.domain.tool.search.WebSearchTool
 import com.aicode.feature.agent.domain.tool.browser.BrowserTool
 import com.aicode.feature.agent.domain.tool.github.GitHubTool
 import com.aicode.feature.agent.domain.tool.github.GitHubWriteTool
+import com.aicode.feature.agent.domain.tool.instabox.InstaboxTool
 import com.aicode.feature.agent.domain.tool.renderlayout.RenderLayoutTool
 import com.aicode.feature.agent.domain.workflow.ContextCompactor
 import com.aicode.feature.agent.domain.workflow.StatefulAgentWorkflow
@@ -382,6 +383,7 @@ object AgentModule {
         browserTool: BrowserTool,
         githubTool: GitHubTool,
         githubWriteTool: GitHubWriteTool,
+        instaboxTool: InstaboxTool,
         renderLayoutTool: RenderLayoutTool
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -413,6 +415,7 @@ object AgentModule {
             // order is schema order, so they do not crowd the front of the tool list.
             register("github", githubTool)
             register("githubWrite", githubWriteTool)
+            register("linux_machine", instaboxTool)
             // renderLayout goes last: niche preview tool, keep it out of the hot schema zone.
             register("renderLayout", renderLayoutTool)
         }

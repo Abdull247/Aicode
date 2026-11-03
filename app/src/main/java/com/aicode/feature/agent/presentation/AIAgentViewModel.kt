@@ -161,6 +161,7 @@ class AIAgentViewModel @Inject constructor(
     val fileAccess: FileAccessProvider,
     private val fileChangeHub: FileChangeHub,
     private val rootNetworkGuard: RootNetworkGuard,
+    private val remoteEnvironmentSettings: com.aicode.feature.settings.data.repository.RemoteEnvironmentSettingsRepository,
     @param:ApplicationContext private val context: Context
 ) : ViewModel(), SlashCommandContext {
 
@@ -1750,6 +1751,7 @@ class AIAgentViewModel @Inject constructor(
 
             val allTools = toolRegistry.getAvailableTools()
             val isSub = sessionEntity?.parentId != null
+            val instaboxReady = remoteEnvironmentSettings.getInstaboxConfig().isReady
             val tools = when {
                 agentDefinition != null -> {
                     val allowed = agentDefinition.filterToolNames(allTools.map { it.name }).toSet()
@@ -1757,6 +1759,8 @@ class AIAgentViewModel @Inject constructor(
                 }
                 isSub -> allTools.filterNot { it.name == AgentDefinition.NESTED_TOOL }
                 else -> allTools.filterNot { it.name == AgentDefinition.PARENT_MESSAGE_TOOL }
+            }.let { list ->
+                if (instaboxReady) list else list.filterNot { it.name == "linux_machine" }
             }
 
             var currentReasoningStart: Long? = null
