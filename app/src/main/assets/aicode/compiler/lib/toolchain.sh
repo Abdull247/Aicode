@@ -347,11 +347,14 @@ cmd_setup() {
     have_cmd python3 && python_ok=1
     if [ "$python_ok" -eq 1 ]; then
         python3 - "$manifest" "$AICORE_HOME" "$arch" <<'PY'
-import json, os, subprocess, sys, hashlib, urllib.request
+import json, os, subprocess, sys, hashlib, urllib.request, shutil
 
 manifest_path, home, arch = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(manifest_path, encoding="utf-8") as f:
     data = json.load(f)
+
+# Some hosts (e.g. Cloudflare r2.dev) reject the default Python-urllib UA.
+user_agent = "AICore/%s" % (data.get("compiler", {}).get("version", "0.1.0"))
 
 components = data.get("components") or []
 if isinstance(components, dict):
@@ -375,10 +378,18 @@ for c in components:
     os.makedirs(dl_dir, exist_ok=True)
     dl = os.path.join(dl_dir, filename)
     print(f"download {cid}: {url}", file=sys.stderr)
-    try:
-        urllib.request.urlretrieve(url, dl)
-    except Exception as e:
-        print(f"fail {cid}: {e}", file=sys.stderr)
+    downloaded = False
+    if shutil.which("curl"):
+        downloaded = subprocess.call(["curl", "-fSL", "--retry", "3", "-A", user_agent, "-o", dl, url]) == 0
+    if not downloaded:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+            with urllib.request.urlopen(req, timeout=600) as resp, open(dl, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            downloaded = True
+        except Exception as e:
+            print(f"fail {cid}: {e}", file=sys.stderr)
+    if not downloaded:
         failed += 1
         if required:
             sys.exit(2)
