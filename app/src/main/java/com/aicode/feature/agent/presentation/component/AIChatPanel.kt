@@ -1929,8 +1929,7 @@ fun AIChatPanel(
             )
         }
 
-        // Dialog 是独立 window、不占父布局尺寸，挂在 Scaffold 之后即可覆盖整屏 ——
-        // 平板双栏下不会只盖住聊天列，也不会被 MainActivity 画在最上层的全局背景水印压住。
+        // Dialogs are separate windows and do not take up parent layout size; mounting them after the Scaffold lets them cover the whole screen — under the tablet two-pane layout they cover the whole screen rather than just the chat column, and they are not pushed under the global background watermark that MainActivity draws on top.
         ImageViewerHost(state = imageViewerState, load = chatImageLoad)
     }
 }

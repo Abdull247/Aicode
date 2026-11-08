@@ -376,7 +376,7 @@ private const val MAX_PANE_SPLIT = 0.7f
  *
  * ViewModel 提升到这一层创建，以便 Drawer 内容和 AIChatPanel 共享同一实例。
  */
-/** 导航路由 → 性能面板模块名。editor 路由带 query 参数，用前缀匹配。 */
+/** Nav route -> perf panel module name. The editor route carries query params, so match by prefix. */
 private fun perfModuleOf(route: String?): String = when {
     route == null -> "other"
     route == "projects" -> "projects"
@@ -765,7 +765,7 @@ fun AppNavigation(
         )
     }
 
-    // 页面主体（NavHost）：大屏放进 Row 的右侧，窄窗放进 modal 抽屉容器里。
+    // Main body (NavHost): on wide screens it sits to the right of the Row; on narrow windows it goes into the modal drawer container.
     val navBody: @Composable () -> Unit = {
         NavHost(
             navController = navController,
