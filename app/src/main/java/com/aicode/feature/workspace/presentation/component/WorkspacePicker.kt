@@ -30,8 +30,6 @@ import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import com.aicode.core.ui.AppTextField
-import com.aicode.core.ui.dialogTextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +67,7 @@ fun WorkspaceChip(
     viewModel: WorkspaceViewModel,
     hasRunningSessions: () -> Boolean = { false },
     onSwitchConfirmed: () -> Unit = {},
+    onCreateProject: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val current by viewModel.current.collectAsStateWithLifecycle()
@@ -109,18 +108,20 @@ fun WorkspaceChip(
         onDismiss = { showSheet = false },
         viewModel = viewModel,
         hasRunningSessions = hasRunningSessions,
-        onSwitchConfirmed = onSwitchConfirmed
+        onSwitchConfirmed = onSwitchConfirmed,
+        onCreateProject = onCreateProject
     )
 }
 
 /**
- * 顶栏的工作区选择图标按钮：点击弹出选择/新建/删除面板。
+ * 顶栏的工作区选择图标按钮:点击弹出选择/新建/删除面板。
  */
 @Composable
 fun WorkspaceIconButton(
     viewModel: WorkspaceViewModel,
     hasRunningSessions: () -> Boolean = { false },
     onSwitchConfirmed: () -> Unit = {},
+    onCreateProject: () -> Unit = {},
     modifier: Modifier = Modifier,
     iconSize: Dp = 24.dp
 ) {
@@ -153,13 +154,14 @@ fun WorkspaceIconButton(
         onDismiss = { showSheet = false },
         viewModel = viewModel,
         hasRunningSessions = hasRunningSessions,
-        onSwitchConfirmed = onSwitchConfirmed
+        onSwitchConfirmed = onSwitchConfirmed,
+        onCreateProject = onCreateProject
     )
 }
 
 /**
- * 工作区选择面板 + 切换确认弹窗的公共宿主：Chip 与 IconButton 两个入口共用，
- * 有会话运行时切换需先确认（确认回调由调用方执行停止逻辑）。
+ * 工作区选择面板 + 切换确认弹窗的公共宿主:Chip 与 IconButton 两个入口共用,
+ * 有会话运行时切换需先确认(确认回调由调用方执行停止逻辑)。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,7 +170,8 @@ private fun WorkspaceSelectionHost(
     onDismiss: () -> Unit,
     viewModel: WorkspaceViewModel,
     hasRunningSessions: () -> Boolean,
-    onSwitchConfirmed: () -> Unit
+    onSwitchConfirmed: () -> Unit,
+    onCreateProject: () -> Unit
 ) {
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
     val current by viewModel.current.collectAsStateWithLifecycle()
@@ -238,11 +241,7 @@ private fun WorkspaceSelectionHost(
                 else showExternalWarning = true
             },
             onSelect = ::select,
-            onCreate = { name ->
-                viewModel.createWorkspace(name) { created ->
-                    if (created != null) select(created)
-                }
-            },
+            onCreateProject = onCreateProject,
             onDelete = { viewModel.deleteWorkspace(it.name) },
             onStopCurrentSessions = onSwitchConfirmed,
             deleteExternalWorkspaceSessions = deleteExternalWorkspaceSessions,
@@ -316,14 +315,13 @@ private fun WorkspaceSheet(
     showExternalEntry: Boolean,
     onAddExternal: () -> Unit,
     onSelect: (Workspace) -> Unit,
-    onCreate: (String) -> Unit,
+    onCreateProject: () -> Unit,
     onDelete: (Workspace) -> Unit,
     onStopCurrentSessions: () -> Unit,
     deleteExternalWorkspaceSessions: Boolean,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
-    var showCreateDialog by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Workspace?>(null) }
 
     AdaptiveModalBottomSheet(
@@ -354,7 +352,7 @@ private fun WorkspaceSheet(
                         Text(stringResource(R.string.workspace_add_local_dir))
                     }
                 }
-                TextButton(onClick = { showCreateDialog = true }) {
+                TextButton(onClick = { onDismiss(); onCreateProject() }) {
                     Icon(FeatherIcons.Plus, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(stringResource(R.string.workspace_new))
@@ -385,17 +383,6 @@ private fun WorkspaceSheet(
                 }
             }
         }
-    }
-
-    if (showCreateDialog) {
-        CreateWorkspaceDialog(
-            existingNames = workspaces.map { it.name },
-            onConfirm = {
-                onCreate(it)
-                showCreateDialog = false
-            },
-            onDismiss = { showCreateDialog = false }
-        )
     }
 
     pendingDelete?.let { ws ->
@@ -509,48 +496,4 @@ private fun WorkspaceRow(
             }
         }
     }
-}
-
-@Composable
-private fun CreateWorkspaceDialog(
-    existingNames: List<String>,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    val trimmed = name.trim()
-    val duplicate = existingNames.any { it.equals(trimmed, ignoreCase = true) }
-    val canConfirm = trimmed.isNotEmpty() && !duplicate
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.workspace_new_workspace)) },
-        text = {
-            Column {
-                AppTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    label = stringResource(R.string.common_name),
-                    placeholder = stringResource(R.string.workspace_name_hint),
-                    isError = duplicate,
-                    colors = dialogTextFieldColors()
-                )
-                if (duplicate) {
-                    Spacer(Modifier.height(Spacing.xs))
-                    Text(
-                        stringResource(R.string.workspace_name_exists),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = canConfirm, onClick = { onConfirm(trimmed) }) { Text(stringResource(R.string.common_create)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
-        }
-    )
 }

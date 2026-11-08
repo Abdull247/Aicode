@@ -1686,6 +1686,36 @@
     <string name="workspace_unavailable_current">Workspace "%1$s" is currently unavailable (the directory may have been moved or deleted)</string>
     <string name="workspace_unavailable_fallback">Workspace "%1$s" is unavailable; switched to "%2$s"</string>
 
+    <!-- New Project Flow -->
+    <string name="workspace_project_type_title">New Project</string>
+    <string name="workspace_project_type_section">Choose a project type</string>
+    <string name="workspace_project_type_plain">Empty project</string>
+    <string name="workspace_project_type_plain_desc">An empty workspace folder to start from scratch</string>
+    <string name="workspace_project_type_git">Git project</string>
+    <string name="workspace_project_type_git_desc">An empty workspace with a Git repository initialized</string>
+    <string name="workspace_project_type_android">Android project</string>
+    <string name="workspace_project_type_android_desc">Generate an Android app skeleton from a template</string>
+    <string name="workspace_android_template_title">Choose an Android template</string>
+    <string name="workspace_android_template_native_xml">Native XML (Java)</string>
+    <string name="workspace_android_template_native_xml_desc">Java Activity + XML layout with no third-party libraries</string>
+    <string name="workspace_android_new_project">New Android Project</string>
+    <string name="workspace_android_app_name">Application name</string>
+    <string name="workspace_android_app_name_hint">e.g. My App</string>
+    <string name="workspace_android_package_name">Package name</string>
+    <string name="workspace_android_package_name_hint">e.g. com.example.myapp</string>
+    <string name="workspace_android_package_invalid">Use lowercase letters, digits and dots, e.g. com.example.myapp</string>
+    <string name="workspace_android_project_name">Project name</string>
+    <string name="workspace_android_project_name_hint">e.g. my-app</string>
+    <string name="workspace_android_theme_colors">Theme colors</string>
+    <string name="workspace_android_color_accent">Accent color</string>
+    <string name="workspace_android_color_primary">Primary color</string>
+    <string name="workspace_android_color_primary_dark">Primary dark color</string>
+    <string name="workspace_android_theme_presets">Theme presets</string>
+    <string name="workspace_android_edit_color">Edit color</string>
+    <string name="workspace_android_color_hex">Hex color</string>
+    <string name="workspace_create_failed">Failed to create the workspace</string>
+    <string name="workspace_create_scaffold_failed">Workspace created, but writing the template failed</string>
+
     <!-- Helper Strings -->
     <string name="container_channel_deleted">Channel deleted</string>
     <string name="chat_more_options">More Options</string>

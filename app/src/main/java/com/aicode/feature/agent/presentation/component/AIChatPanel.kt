@@ -537,6 +537,7 @@ fun AIChatPanel(
     onNavigateToBrowser: () -> Unit = {},
     settingsViewModel: SettingsViewModel? = null,
     workspaceViewModel: WorkspaceViewModel? = null,
+    onCreateProject: () -> Unit = {},
     onOpenDrawer: () -> Unit,
     showMenuButton: Boolean = true,
     /** 大屏右栏当前开的是终端 / Git 时，顶栏对应图标高亮。 */
@@ -1715,6 +1716,7 @@ fun AIChatPanel(
                 workspaceViewModel = workspaceViewModel,
                 hasRunningSessions = { viewModel.hasRunningSessionsInCurrentWorkspace() },
                 onSwitchWorkspaceConfirmed = { viewModel.stopAllAndCloseTerminal() },
+                onCreateProject = onCreateProject,
                 activeProvider = activeProvider,
                 providers = providers,
                 modelMetadata = modelMetadata,

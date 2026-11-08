@@ -146,6 +146,7 @@ internal fun ChatInputBar(
     workspaceViewModel: WorkspaceViewModel?,
     hasRunningSessions: () -> Boolean,
     onSwitchWorkspaceConfirmed: () -> Unit = {},
+    onCreateProject: () -> Unit = {},
     activeProvider: AIProviderConfig?,
     providers: List<AIProviderConfig>,
     modelMetadata: Map<String, ModelMetadata>,
@@ -478,6 +479,7 @@ internal fun ChatInputBar(
                                 viewModel = workspaceViewModel,
                                 hasRunningSessions = hasRunningSessions,
                                 onSwitchConfirmed = onSwitchWorkspaceConfirmed,
+                                onCreateProject = onCreateProject,
                                 modifier = Modifier.size(36.dp),
                                 iconSize = 20.dp
                             )

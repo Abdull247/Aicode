@@ -115,6 +115,8 @@ import com.aicode.feature.terminal.domain.TerminalKeepaliveService
 import com.aicode.feature.terminal.presentation.TerminalViewModel
 import com.aicode.feature.terminal.presentation.component.TerminalScreen
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
+import com.aicode.feature.workspace.presentation.component.CreateAndroidProjectScreen
+import com.aicode.feature.workspace.presentation.component.ProjectTypeScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -807,6 +809,7 @@ fun AppNavigation(
                                 settingsViewModel = settingsViewModel,
                                 workspaceViewModel = workspaceViewModel,
                                 onOpenDrawer = { scope.launch { drawerState.open() } },
+                                onCreateProject = { navController.navigate("project-type") },
                                 showMenuButton = !permanentDrawer,
                                 onNavigateToTerminal = { openWorkbench(WorkbenchPaneKind.TERMINAL) },
                                 onNavigateToGit = { openWorkbench(WorkbenchPaneKind.GIT) },
@@ -847,6 +850,21 @@ fun AppNavigation(
                         )
                     }
                 }
+            }
+            composable("project-type") {
+                ProjectTypeScreen(
+                    onNavigateToAndroidDetails = { navController.navigate("android-project") },
+                    onCreated = { navController.popBackStack("chat", inclusive = false) },
+                    onNavigateBack = { navController.popBackStack() },
+                    onSwitchConfirmed = { agentViewModel.stopAllAndCloseTerminal() }
+                )
+            }
+            composable("android-project") {
+                CreateAndroidProjectScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onCreated = { navController.popBackStack("chat", inclusive = false) },
+                    onSwitchConfirmed = { agentViewModel.stopAllAndCloseTerminal() }
+                )
             }
             composable("settings") {
                 // 复用 Activity 级 settingsViewModel（MainActivity 顶部已创建并 init），
