@@ -110,6 +110,19 @@ android {
             enableV2Signing = true
             enableV3Signing = true
         }
+
+        // Debug APKs are signed with a keystore committed to the repo instead of AGP's auto-generated
+        // ~/.android/debug.keystore. CI runners are ephemeral, so the default debug keystore is recreated
+        // with a fresh key on every run; the resulting signature change makes "install over the old build"
+        // fail (users must uninstall first). A fixed key keeps debug builds upgrade-compatible across CI
+        // runs and with local builds. This is the well-known public debug credential, not a secret.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storeType = "PKCS12"
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     defaultConfig {

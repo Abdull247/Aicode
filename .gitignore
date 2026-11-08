@@ -14,6 +14,10 @@ local.properties
 *.jks
 *.keystore
 keystore.properties
+# Shared debug key: public, non-secret, committed on purpose so CI debug APKs keep a stable
+# signature and can update an existing install (the default ~/.android/debug.keystore is
+# regenerated on every ephemeral CI runner, so its signature changes between builds).
+!app/debug.keystore
 
 # Debug / profiling
 *.hprof

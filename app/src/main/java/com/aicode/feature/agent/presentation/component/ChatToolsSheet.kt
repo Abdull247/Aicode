@@ -53,7 +53,7 @@ fun ChatToolsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.lg)
+                // The group card stays edge-to-edge; only the title keeps a horizontal inset.
                 .padding(bottom = Spacing.xl)
                 .imePadding()
         ) {
@@ -61,7 +61,9 @@ fun ChatToolsSheet(
                 text = stringResource(R.string.chat_tools_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = Spacing.md)
+                modifier = Modifier
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.md)
             )
             SettingsGroup {
                 SettingsRow(
