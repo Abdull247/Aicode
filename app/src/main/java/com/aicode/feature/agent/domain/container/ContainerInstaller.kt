@@ -461,7 +461,7 @@ class ContainerInstaller @Inject constructor(
      *
      * 未装基础包前登录 shell 是 Alpine 的 busybox `sh`,终端以 `ENV=/etc/profile` 启动它;
      * Alpine 的 `/etc/profile` 会先 `export PATH=...` 覆盖掉容器注入的 PATH(其中含
-     * `/root/.aicode/bin`),再 source `/etc/profile.d/*.sh`。所以只在 profile.d 里补一条,
+     * `/root/.aicode/bin`),再 source `/etc/profile.d/` 下的 `*.sh`。所以只在 profile.d 里补一条,
      * 才能在覆盖之后把 `aic`/`aicode` 找回来——否则预置环境前 `aicode` 自己都不可见。
      * 内容存在即跳过(不改 mtime),写失败仅告警。
      */
