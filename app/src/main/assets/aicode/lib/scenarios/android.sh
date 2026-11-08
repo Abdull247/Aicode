@@ -12,7 +12,7 @@ install_scenario_android() {
     fi
     echo ""
     echo "Installing JDK and base tools..."
-    pkg_add "$(apt_jdk_pkg)" curl wget unzip || return 1
+    pkg_add "$(jdk_pkg)" curl wget unzip openssl || return 1
     install_android_sdk "36" "35.0.0" || return 1
     install_android_tools_arm64 || true
     write_android_profile

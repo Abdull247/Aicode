@@ -31,6 +31,24 @@ apt_jdk_pkg() {
     echo "openjdk-17-jdk-headless"
 }
 
+# ── 按包管理器返回 JDK 包名(apt 探测 17/21;apk/dnf/yum/pacman 用各自命名)。
+#    apt 的包名(openjdk-17-jdk-headless)在 Alpine 上不存在,直接复用会 "no such package"。──
+jdk_pkg() {
+    case "$PMGR" in
+        apt) apt_jdk_pkg ;;
+        apk)
+            for p in openjdk17-jdk openjdk21-jdk; do
+                if apk info -e "$p" >/dev/null 2>&1 || apk search -x "$p" >/dev/null 2>&1; then
+                    echo "$p"; return 0
+                fi
+            done
+            echo "openjdk17-jdk" ;;
+        dnf|yum) echo "java-17-openjdk-headless" ;;
+        pacman) echo "jdk17-openjdk" ;;
+        *) echo "openjdk-17-jdk-headless" ;;
+    esac
+}
+
 # ── 安装 Android SDK：cmdline-tools + sdkmanager 组件。
 #    $1=平台版本（空格分隔，如 "36"）、$2=build-tools 版本（空格分隔，如 "33.0.1 35.0.0"）。
 #    组件走腾讯云镜像（SDK_TEST_BASE_URL 覆盖 sdkmanager 仓库根）。幂等：已装则跳过。──
