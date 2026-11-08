@@ -352,6 +352,7 @@ class ContainerInstaller @Inject constructor(
 
             val entries = extractRootfs(onProgress)
             configureResolvConf()
+            ensureAicodePathProfile(rootfsDir)
             prootTmpDir.mkdirs()
             installedMarker.writeText(INSTALL_VERSION)
             FileLogger.i(
@@ -445,12 +446,44 @@ class ContainerInstaller @Inject constructor(
     }
 
     /**
-     * rootfs 兼容性巡检（幂等，失败静默）：修复已知的 Ubuntu 25.10+ 布局问题。
-     * 所有容器统一调用，作用面由内部存在性检测收敛——非命中容器零改动。
+     * rootfs 兼容性巡检(幂等,失败静默):修复已知的 Ubuntu 25.10+ 布局问题,
+     * 并确保 AICore 的 bin 目录在登录 shell 里存活(见 [ensureAicodePathProfile])。
+     * 所有容器统一调用,作用面由内部存在性检测收敛——非命中容器零改动。
      */
     fun repairRootfsCompatibility(rootfs: File) {
         fixCoreutilsPermissions(rootfs)
         fixNodeGlobEntry(rootfs)
+        ensureAicodePathProfile(rootfs)
+    }
+
+    /**
+     * 写 `/etc/profile.d/00-aicode-path.sh`,把 `/root/.aicode/bin` 重新前置到 PATH。
+     *
+     * 未装基础包前登录 shell 是 Alpine 的 busybox `sh`,终端以 `ENV=/etc/profile` 启动它;
+     * Alpine 的 `/etc/profile` 会先 `export PATH=...` 覆盖掉容器注入的 PATH(其中含
+     * `/root/.aicode/bin`),再 source `/etc/profile.d/*.sh`。所以只在 profile.d 里补一条,
+     * 才能在覆盖之后把 `aic`/`aicode` 找回来——否则预置环境前 `aicode` 自己都不可见。
+     * 内容存在即跳过(不改 mtime),写失败仅告警。
+     */
+    private fun ensureAicodePathProfile(rootfs: File) {
+        runCatching {
+            val dir = File(rootfs, "etc/profile.d")
+            if (!dir.isDirectory && !dir.mkdirs()) {
+                FileLogger.w(TAG, "创建 profile.d 失败:${dir.absolutePath}")
+                return
+            }
+            val file = File(dir, "00-aicode-path.sh")
+            val content = buildString {
+                appendLine("# AiCode: restore the AICore bin dir after /etc/profile resets PATH.")
+                appendLine("# Written by the app; safe to delete (it is re-created on next start).")
+                appendLine("export PATH=\"/root/.aicode/bin:\$PATH\"")
+            }
+            if (file.isFile && file.readText() == content) return
+            file.writeText(content)
+            FileLogger.d(TAG, "已写入 AICore PATH 钩子:${file.absolutePath}")
+        }.onFailure {
+            FileLogger.w(TAG, "写入 AICore PATH 钩子失败:${rootfs.absolutePath}", it)
+        }
     }
 
     private fun fixCoreutilsPermissions(rootfs: File) {
