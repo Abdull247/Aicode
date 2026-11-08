@@ -52,6 +52,15 @@ aic build --json
 
 v1 限制：Java 17、XML、框架 `Activity`、minSdk >= 21、只用 debug 证书。出现 `.kt` 会直接报 `AIC_KOTLIN_UNSUPPORTED`。
 
+## 在 App 里直接配置和编译
+
+打开一个 Android 工程(工作区根有 `aicode.json`)后,聊天页的 **Tools** 面板里会多出两项:
+
+- **App Configurations**:用浮底导航分「Settings / Build Features」两页查看工程配置。Settings 页可改 min/target/compile SDK 与版本号(写回 `aicode.json`);Build Features 页展示编译器引擎、语言、模板、Java 版本、构建类型与依赖。
+- **Build APK**:不用进终端。左侧列出 `res/layout` 里的 XML 布局,中间是手机框预览;点右上角 ▶ 会调用容器里的 `aic build`,并以不可取消的终端风格日志底栏实时输出构建过程,完成后显示 APK 路径(`build/outputs/apk/debug/app-debug.apk`)。
+
+第一次使用前先在终端跑一次环境安装菜单里的 **Kotlin / Android development (aicode custom compiler)** 场景(装 JDK + Android SDK 并校验 `aic` 工具链),否则构建会提示环境未就绪。
+
 ## 工程格式
 
 `aicode.json` 是唯一配置。模板生成的树和普通 Android 源码一样，Agent 用 `writeFile` / `editFile` 改 Java 和 XML 即可。

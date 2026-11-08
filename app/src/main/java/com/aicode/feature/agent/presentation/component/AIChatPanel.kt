@@ -539,6 +539,7 @@ fun AIChatPanel(
     onNavigateToNetwork: () -> Unit = {},
     onNavigateToEditor: () -> Unit = {},
     onNavigateToCredentials: () -> Unit = {},
+    onAppConfigurations: () -> Unit = {},
     onBuildApk: () -> Unit = {},
     settingsViewModel: SettingsViewModel? = null,
     workspaceViewModel: WorkspaceViewModel? = null,
@@ -1900,6 +1901,10 @@ fun AIChatPanel(
                 onTerminal = {
                     showToolsSheet = false
                     onNavigateToTerminal()
+                },
+                onAppConfigurations = {
+                    showToolsSheet = false
+                    onAppConfigurations()
                 },
                 onBuildApk = {
                     showToolsSheet = false

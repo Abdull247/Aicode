@@ -2,7 +2,6 @@ package com.aicode.feature.agent.presentation.component
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -13,9 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.aicode.R
 import com.aicode.core.theme.Spacing
 import com.aicode.core.ui.AdaptiveModalBottomSheet
@@ -29,6 +26,7 @@ import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Key
 import compose.icons.feathericons.Package
 import compose.icons.feathericons.Send
+import compose.icons.feathericons.Sliders
 import compose.icons.feathericons.Terminal
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +34,7 @@ import compose.icons.feathericons.Terminal
 fun ChatToolsSheet(
     isAndroidProject: Boolean,
     onTerminal: () -> Unit,
+    onAppConfigurations: () -> Unit,
     onBuildApk: () -> Unit,
     onEditor: () -> Unit,
     onBrowser: () -> Unit,
@@ -45,7 +44,6 @@ fun ChatToolsSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val minHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
     AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -54,7 +52,6 @@ fun ChatToolsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = minHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.lg)
                 .padding(bottom = Spacing.xl)
@@ -73,6 +70,13 @@ fun ChatToolsSheet(
                     onClick = onTerminal
                 )
                 if (isAndroidProject) {
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = FeatherIcons.Sliders,
+                        title = stringResource(R.string.chat_tools_app_config),
+                        subtitle = stringResource(R.string.chat_tools_app_config_desc),
+                        onClick = onAppConfigurations
+                    )
                     SettingsDivider()
                     SettingsRow(
                         icon = FeatherIcons.Package,

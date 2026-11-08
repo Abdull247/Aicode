@@ -823,7 +823,8 @@ fun AppNavigation(
                                 onNavigateToNetwork = { navController.navigate("network") },
                                 onNavigateToEditor = { openFile("", 0, false) },
                                 onNavigateToCredentials = { navController.navigate("credentials") },
-                                onBuildApk = { openWorkbench(WorkbenchPaneKind.TERMINAL) },
+                                onAppConfigurations = { navController.navigate("app-config") },
+                                onBuildApk = { navController.navigate("build-apk") },
                                 terminalActive = paneOpen && paneKind == WorkbenchPaneKind.TERMINAL,
                                 gitActive = paneOpen && paneKind == WorkbenchPaneKind.GIT,
                                 browserActive = paneOpen && paneKind == WorkbenchPaneKind.BROWSER,
@@ -961,6 +962,18 @@ fun AppNavigation(
                 val credentialViewModel: com.aicode.feature.credentials.presentation.CredentialViewModel = hiltViewModel()
                 CredentialScreen(
                     viewModel = credentialViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("app-config") {
+                com.aicode.feature.workspace.presentation.component.AppConfigScreen(
+                    workspacePath = currentWorkspace?.path,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("build-apk") {
+                com.aicode.feature.workspace.presentation.component.BuildApkScreen(
+                    workspacePath = currentWorkspace?.path,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
