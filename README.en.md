@@ -93,6 +93,8 @@ There is nothing to set up beforehand: install the app, configure a model under 
 
 ### Experience
 
+- **Projects home** — Launch into a projects list: each project shows a file icon, or a phone icon when detected as an Android project; tap a project to open its chat, or use the + button to create one
+- **Chat tools panel** — A single near-fullscreen panel from the chat header gathers Terminal, Build APK (Android projects only), Editor, Browser, Git, Network Request and Credentials; the sidebar keeps just Settings
 - **Tablet & large screen** — Layout adapts to window width: a persistent sidebar on wide screens with code or terminal beside the chat, falling back to a single pane when narrow
 - **Token stats** — Usage and cost estimates per provider and model, with a drill-down into individual calls
 - **Appearance & language** — Light/dark themes, preset color schemes, Material You colors, custom background images, and a bilingual (Chinese/English) UI

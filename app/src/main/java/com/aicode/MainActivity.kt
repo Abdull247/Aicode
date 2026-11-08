@@ -117,6 +117,7 @@ import com.aicode.feature.terminal.presentation.component.TerminalScreen
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import com.aicode.feature.workspace.presentation.component.CreateAndroidProjectScreen
 import com.aicode.feature.workspace.presentation.component.ProjectTypeScreen
+import com.aicode.feature.workspace.presentation.component.ProjectsScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -378,6 +379,7 @@ private const val MAX_PANE_SPLIT = 0.7f
 /** 导航路由 → 性能面板模块名。editor 路由带 query 参数，用前缀匹配。 */
 private fun perfModuleOf(route: String?): String = when {
     route == null -> "other"
+    route == "projects" -> "projects"
     route == "chat" -> "chat"
     route.startsWith("editor") -> "editor"
     route == "terminal" -> "terminal"
@@ -748,14 +750,6 @@ fun AppNavigation(
                 val safeTitle = session.title.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
                 sessionExportLauncher.launch("aicode-session-$safeTitle-${System.currentTimeMillis()}.tar.gz")
             },
-            onNavigateToBrowser = {
-                openWorkbench(WorkbenchPaneKind.BROWSER)
-                if (!permanentDrawer) scope.launch { drawerState.close() }
-            },
-            onNavigateToNetwork = {
-                navController.navigate("network")
-                if (!permanentDrawer) scope.launch { drawerState.close() }
-            },
             onNavigateToSettings = {
                 navController.navigate("settings")
                 if (!permanentDrawer) scope.launch { drawerState.snapTo(DrawerValue.Closed) }
@@ -775,7 +769,7 @@ fun AppNavigation(
     val navBody: @Composable () -> Unit = {
         NavHost(
             navController = navController,
-            startDestination = "chat",
+            startDestination = "projects",
             // 过渡期间退场页会向左移出自身区域，大屏下不夹住会画到左侧常驻会话侧栏上。
             modifier = Modifier.fillMaxSize().clipToBounds(),
             enterTransition = { pageEnter(forward = true) },
@@ -783,6 +777,18 @@ fun AppNavigation(
             popEnterTransition = { pageEnter(forward = false) },
             popExitTransition = { pageExit(forward = false) }
         ) {
+            composable("projects") {
+                ProjectsScreen(
+                    onOpenProject = {
+                        navController.navigate("chat") { launchSingleTop = true }
+                    },
+                    onCreateProject = { navController.navigate("project-type") },
+                    onOpenSettings = { navController.navigate("settings") },
+                    hasRunningSessions = { agentViewModel.hasRunningSessionsInCurrentWorkspace() },
+                    onSwitchConfirmed = { agentViewModel.stopAllAndCloseTerminal() },
+                    viewModel = workspaceViewModel
+                )
+            }
             composable("chat") {
                 // 聊天区内覆盖 LocalUriHandler：Markdown 链接点击默认经此 handler 派发。
                 // 文件路径类链接（无 scheme 或 file://）拦下来跳编辑器，其余（http/https 等）仍走系统浏览器。
@@ -814,6 +820,10 @@ fun AppNavigation(
                                 onNavigateToTerminal = { openWorkbench(WorkbenchPaneKind.TERMINAL) },
                                 onNavigateToGit = { openWorkbench(WorkbenchPaneKind.GIT) },
                                 onNavigateToBrowser = { openWorkbench(WorkbenchPaneKind.BROWSER) },
+                                onNavigateToNetwork = { navController.navigate("network") },
+                                onNavigateToEditor = { openFile("", 0, false) },
+                                onNavigateToCredentials = { navController.navigate("credentials") },
+                                onBuildApk = { openWorkbench(WorkbenchPaneKind.TERMINAL) },
                                 terminalActive = paneOpen && paneKind == WorkbenchPaneKind.TERMINAL,
                                 gitActive = paneOpen && paneKind == WorkbenchPaneKind.GIT,
                                 browserActive = paneOpen && paneKind == WorkbenchPaneKind.BROWSER,
@@ -854,7 +864,12 @@ fun AppNavigation(
             composable("project-type") {
                 ProjectTypeScreen(
                     onNavigateToAndroidDetails = { navController.navigate("android-project") },
-                    onCreated = { navController.popBackStack("chat", inclusive = false) },
+                    onCreated = {
+                        navController.navigate("chat") {
+                            launchSingleTop = true
+                            popUpTo("projects") { inclusive = false }
+                        }
+                    },
                     onNavigateBack = { navController.popBackStack() },
                     onSwitchConfirmed = { agentViewModel.stopAllAndCloseTerminal() }
                 )
@@ -862,7 +877,12 @@ fun AppNavigation(
             composable("android-project") {
                 CreateAndroidProjectScreen(
                     onNavigateBack = { navController.popBackStack() },
-                    onCreated = { navController.popBackStack("chat", inclusive = false) },
+                    onCreated = {
+                        navController.navigate("chat") {
+                            launchSingleTop = true
+                            popUpTo("projects") { inclusive = false }
+                        }
+                    },
                     onSwitchConfirmed = { agentViewModel.stopAllAndCloseTerminal() }
                 )
             }
@@ -873,9 +893,9 @@ fun AppNavigation(
                 SettingsScreen(
                     viewModel = settingsViewModel,
                     onNavigateBack = {
+                        val fromChat = navController.previousBackStackEntry?.destination?.route == "chat"
                         navController.popBackStack()
-                        // 大屏返回聊天页后侧栏本就常驻，不再弹 modal 抽屉。
-                        if (!expanded) scope.launch { drawerState.open() }
+                        if (!expanded && fromChat) scope.launch { drawerState.open() }
                     },
                     onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() },
                     onRerunOnboarding = {

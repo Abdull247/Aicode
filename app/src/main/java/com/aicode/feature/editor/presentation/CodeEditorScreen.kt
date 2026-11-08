@@ -422,7 +422,10 @@ fun CodeEditorScreen(
             val content = Modifier
                 .fillMaxSize()
                 .padding(padding)
-            when (val s = state) {
+                when (val s = state) {
+                is EditorUiState.Idle -> CenterBox(content) {
+                    HintText(stringResource(R.string.editor_empty_hint))
+                }
                 is EditorUiState.Loading -> CenterBox(content) { CircularProgressIndicator() }
                 is EditorUiState.Success if s.path == activePath -> Box(modifier = content) {
                     // Recreate the editor view per document (switch or reload); picking another

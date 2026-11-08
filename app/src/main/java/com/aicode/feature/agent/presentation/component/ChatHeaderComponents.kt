@@ -43,12 +43,11 @@ import com.aicode.core.theme.chatChromeColor
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
+import com.aicode.core.ui.ToolGridIcon
 import com.aicode.feature.settings.presentation.component.ModelLogoIcon
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Terminal
 
 /** Header content height excluding the status bar: one title line, one model line, 48dp icons. */
 internal const val CHAT_HEADER_HEIGHT_DP = 52
@@ -76,16 +75,12 @@ internal fun ChatHeader(
     outputTokens: Int,
     onOpenDrawer: () -> Unit,
     onNewChat: () -> Unit,
-    onNavigateToTerminal: () -> Unit,
-    onNavigateToGit: () -> Unit,
-    onNavigateToBrowser: () -> Unit = {},
+    onOpenTools: () -> Unit = {},
     currentMode: AgentMode,
     onToggleMode: (AgentMode) -> Unit,
     connectionState: com.aicode.feature.agent.domain.container.ConnectionState? = null,
     showMenuButton: Boolean = true,
-    terminalActive: Boolean = false,
-    gitActive: Boolean = false,
-    browserActive: Boolean = false,
+    toolsActive: Boolean = false,
     modifier: Modifier = Modifier,
     @Suppress("UNUSED_PARAMETER")
     glassBackdrop: com.styropyr0.prismal.sources.PrismalGlassLayer? = null,
@@ -156,24 +151,18 @@ internal fun ChatHeader(
                         )
                     }
                 }
+                WorkbenchIconButton(
+                    icon = ToolGridIcon,
+                    contentDescription = stringResource(R.string.chat_open_tools),
+                    active = toolsActive,
+                    onClick = onOpenTools
+                )
                 IconButton(onClick = onNewChat) {
                     Icon(
                         FeatherIcons.Plus,
                         contentDescription = stringResource(R.string.chat_new_session),
                         tint = subtitleColor)
                 }
-                WorkbenchIconButton(
-                    icon = FeatherIcons.GitBranch,
-                    contentDescription = stringResource(R.string.chat_open_git),
-                    active = gitActive,
-                    onClick = onNavigateToGit
-                )
-                WorkbenchIconButton(
-                    icon = FeatherIcons.Terminal,
-                    contentDescription = stringResource(R.string.chat_open_terminal),
-                    active = terminalActive,
-                    onClick = onNavigateToTerminal
-                )
             }
             // Remote mode only: connection status + token stats.
             if (connectionState != null) {

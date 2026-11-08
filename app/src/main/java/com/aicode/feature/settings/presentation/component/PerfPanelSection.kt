@@ -502,6 +502,7 @@ private data class ModuleAgg(
 
 @Composable
 private fun moduleLabel(key: String): String = when (key) {
+    "projects" -> stringResource(R.string.perf_module_projects)
     "chat" -> stringResource(R.string.perf_module_chat)
     "editor" -> stringResource(R.string.perf_module_editor)
     "terminal" -> stringResource(R.string.perf_module_terminal)

@@ -115,9 +115,7 @@ import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
-import compose.icons.feathericons.Globe
 import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Send
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.X
@@ -171,8 +169,6 @@ fun ChatDrawerContent(
     onImportFiles: (String) -> Unit = {},
     onImportFolder: (String) -> Unit = {},
     onCopyPath: (String) -> Unit = {},
-    onNavigateToBrowser: (() -> Unit)? = null,
-    onNavigateToNetwork: (() -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
     searchQuery: String,
     searchState: ChatSearchState,
@@ -357,22 +353,6 @@ fun ChatDrawerContent(
         }
 
         SettingsGroup {
-            if (onNavigateToBrowser != null) {
-                SettingsRow(
-                    icon = FeatherIcons.Globe,
-                    title = stringResource(R.string.browser_title),
-                    onClick = onNavigateToBrowser
-                )
-                SettingsDivider()
-            }
-            if (onNavigateToNetwork != null) {
-                SettingsRow(
-                    icon = FeatherIcons.Send,
-                    title = stringResource(R.string.network_request_title),
-                    onClick = onNavigateToNetwork
-                )
-                SettingsDivider()
-            }
             SettingsRow(
                 icon = FeatherIcons.Settings,
                 title = stringResource(R.string.chat_settings),

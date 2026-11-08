@@ -25,6 +25,7 @@ import javax.inject.Inject
 
 /** Editor page state. */
 sealed interface EditorUiState {
+    data object Idle : EditorUiState
     data object Loading : EditorUiState
 
     /**
@@ -61,7 +62,7 @@ class CodeEditorViewModel @Inject constructor(
     private val editorSettings: EditorSettingsRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
+    private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Idle)
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
     private val _saveEvents = Channel<SaveResult>(Channel.BUFFERED)
@@ -107,7 +108,11 @@ class CodeEditorViewModel @Inject constructor(
 
     /** Safe to call on recomposition: the same path is not re-read from disk. */
     fun load(path: String) {
-        if (path.isBlank()) return
+        if (path.isBlank()) {
+            loadedPath = null
+            _uiState.value = EditorUiState.Idle
+            return
+        }
         if (loadedPath == path && _uiState.value !is EditorUiState.Loading) return
         loadedPath = path
         val cached = buffers[path]

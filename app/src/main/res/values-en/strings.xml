@@ -621,6 +621,17 @@
     <string name="session_group_pinned">Pinned</string>
     <string name="session_group_month_format">MMMM yyyy</string>
     <string name="chat_settings">Settings</string>
+    <string name="chat_open_tools">Tools</string>
+    <string name="chat_tools_title">Tools</string>
+    <string name="chat_tools_build_apk">Build APK</string>
+    <string name="chat_tools_build_apk_desc">Open the terminal to build this Android project</string>
+    <string name="chat_tools_editor">Editor</string>
+    <string name="chat_tools_credentials">Credentials</string>
+    <string name="projects_title">Projects</string>
+    <string name="projects_telegram">Telegram</string>
+    <string name="projects_empty_hint">No projects yet. Tap + to create one.</string>
+    <string name="projects_section">Projects</string>
+    <string name="editor_empty_hint">Open a file from the project tree</string>
     <string name="chat_pin_session">Pin to Top</string>
     <string name="chat_unpin_session">Unpin</string>
     <string name="chat_delete_session">Delete Session</string>
@@ -1985,6 +1996,7 @@
     <string name="perf_clear">Clear records</string>
     <string name="perf_clear_confirm_title">Clear all performance records?</string>
     <string name="perf_clear_confirm_desc">This permanently deletes all persisted performance log files.</string>
+    <string name="perf_module_projects">Projects</string>
     <string name="perf_module_chat">Chat</string>
     <string name="perf_module_editor">Editor</string>
     <string name="perf_module_terminal">Terminal</string>

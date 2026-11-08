@@ -101,6 +101,7 @@ import com.aicode.feature.settings.domain.model.DashboardContext
 import com.aicode.feature.settings.domain.model.ProviderDashboardState
 import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
+import com.aicode.feature.workspace.domain.project.ProjectKindDetector
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowDown
@@ -535,6 +536,10 @@ fun AIChatPanel(
     onNavigateToTerminal: () -> Unit = {},
     onNavigateToGit: () -> Unit = {},
     onNavigateToBrowser: () -> Unit = {},
+    onNavigateToNetwork: () -> Unit = {},
+    onNavigateToEditor: () -> Unit = {},
+    onNavigateToCredentials: () -> Unit = {},
+    onBuildApk: () -> Unit = {},
     settingsViewModel: SettingsViewModel? = null,
     workspaceViewModel: WorkspaceViewModel? = null,
     onCreateProject: () -> Unit = {},
@@ -653,6 +658,7 @@ fun AIChatPanel(
     val listState = rememberLazyListState()
     // 消息未就绪时的加载提示：本地读库通常几十毫秒，立刻显示反而闪一下，等一小会儿还没就绪才提示。
     var showMessagesLoading by remember(currentSessionId) { mutableStateOf(false) }
+    var showToolsSheet by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(currentSessionId, messagesReady) {
         if (messagesReady) {
             showMessagesLoading = false
@@ -1624,16 +1630,12 @@ fun AIChatPanel(
                     onOpenDrawer()
                 },
                 onNewChat = { viewModel.newSession() },
-                onNavigateToTerminal = onNavigateToTerminal,
-                onNavigateToGit = onNavigateToGit,
-                onNavigateToBrowser = onNavigateToBrowser,
+                onOpenTools = { showToolsSheet = true },
                 currentMode = currentMode,
                 onToggleMode = { viewModel.setSessionMode(it) },
                 connectionState = connectionState?.takeIf { isRemote },
                 showMenuButton = showMenuButton,
-                terminalActive = terminalActive,
-                gitActive = gitActive,
-                browserActive = browserActive,
+                toolsActive = showToolsSheet || terminalActive || gitActive || browserActive,
                 glassBackdrop = glassLayer,
                 glassLuminance = { glassLuminance.luminance },
                 glassContentColor = glassLuminance.contentColor,
@@ -1891,6 +1893,41 @@ fun AIChatPanel(
         }
         }
     }
+
+        if (showToolsSheet) {
+            ChatToolsSheet(
+                isAndroidProject = currentWorkspace?.path?.let { ProjectKindDetector.isAndroidProject(it) } == true,
+                onTerminal = {
+                    showToolsSheet = false
+                    onNavigateToTerminal()
+                },
+                onBuildApk = {
+                    showToolsSheet = false
+                    onBuildApk()
+                },
+                onEditor = {
+                    showToolsSheet = false
+                    onNavigateToEditor()
+                },
+                onBrowser = {
+                    showToolsSheet = false
+                    onNavigateToBrowser()
+                },
+                onGit = {
+                    showToolsSheet = false
+                    onNavigateToGit()
+                },
+                onNetwork = {
+                    showToolsSheet = false
+                    onNavigateToNetwork()
+                },
+                onCredentials = {
+                    showToolsSheet = false
+                    onNavigateToCredentials()
+                },
+                onDismiss = { showToolsSheet = false }
+            )
+        }
 
         // Dialog 是独立 window、不占父布局尺寸，挂在 Scaffold 之后即可覆盖整屏 ——
         // 平板双栏下不会只盖住聊天列，也不会被 MainActivity 画在最上层的全局背景水印压住。
