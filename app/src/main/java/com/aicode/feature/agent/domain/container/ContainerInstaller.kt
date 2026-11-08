@@ -194,8 +194,11 @@ class ContainerInstaller @Inject constructor(
          */
         fun extractEnvTool(context: Context) {
             runCatching {
-                extractDirOverwrite(context, "aicode/bin", File(File(context.filesDir, "aicode"), "bin"), executable = true)
-                extractDirOverwrite(context, "aicode/lib", File(File(context.filesDir, "aicode"), "lib"), executable = false)
+                val aicode = File(context.filesDir, "aicode")
+                extractDirOverwrite(context, "aicode/bin", File(aicode, "bin"), executable = true)
+                extractDirOverwrite(context, "aicode/lib", File(aicode, "lib"), executable = false)
+                // AICore (`aic`) engine + templates. Wrapper in bin/aic execs compiler/aic.
+                extractDirOverwrite(context, "aicode/compiler", File(aicode, "compiler"), executable = true)
             }.onFailure {
                 FileLogger.w(TAG, "提取环境工具失败: ${it.message}", it)
             }

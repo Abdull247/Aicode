@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "name": "HelloAi",
+  "package": "com.example.hello",
+  "version": { "code": 1, "name": "1.0.0" },
+  "platform": {
+    "minSdk": 24,
+    "targetSdk": 34,
+    "compileSdk": 34
+  },
+  "compiler": {
+    "engine": "aicore",
+    "language": "java",
+    "java": 17,
+    "template": "native-xml"
+  },
+  "dependencies": [],
+  "build": { "type": "debug" }
+}

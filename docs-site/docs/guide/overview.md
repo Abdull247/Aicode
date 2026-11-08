@@ -81,6 +81,7 @@
 
 | 主题 | 说明 |
 | --- | --- |
+| 用 AICore 编译小应用 | 容器里用 `aic` 打 debug APK，不跑 Gradle → [文档](/advanced/aicore-compiler) |
 | 在容器中编译 Android 应用 | 搭 JDK 与 Android SDK，从源码出 APK → [文档](/advanced/build-android-app) |
 | 在容器中编译 Flutter 应用 | 装 JDK、Android SDK 与 Flutter SDK，构建 Flutter debug APK → [文档](/advanced/build-flutter-app) |
 | 安装 Playwright 浏览器自动化 | 容器内装 Chromium 并接入 Playwright MCP，让 AI 操作网页 → [文档](/advanced/playwright-mcp) |

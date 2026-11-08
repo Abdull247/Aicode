@@ -1,0 +1,254 @@
+#!/bin/sh
+# aic — AICore CLI. Lightweight Android build orchestrator for the AiCode Linux box.
+# Never named `aicode` (that command is the env installer).
+set -eu
+
+SELF="$0"
+case "$SELF" in
+    */*) ;;
+    *) SELF=$(command -v "$SELF" 2>/dev/null || printf '%s' "$SELF") ;;
+esac
+case "$SELF" in
+    /*) ;;
+    *) SELF="$(pwd)/$SELF" ;;
+esac
+# Resolve one symlink hop so assets/bin/aic wrappers still find ../compiler/lib.
+if command -v readlink >/dev/null 2>&1; then
+    link=$(readlink "$SELF" 2>/dev/null || true)
+    case "$link" in
+        /*) SELF="$link" ;;
+        "") ;;
+        *) SELF="$(dirname "$SELF")/$link" ;;
+    esac
+fi
+SELF_DIR=$(dirname "$SELF")
+AICORE_LIB_DIR="$SELF_DIR/lib"
+if [ ! -f "$AICORE_LIB_DIR/common.sh" ]; then
+    # Installed as /root/.aicode/bin/aic with libs under /root/.aicode/compiler/lib
+    if [ -f "${HOME:-/root}/.aicode/compiler/lib/common.sh" ]; then
+        AICORE_LIB_DIR="${HOME:-/root}/.aicode/compiler/lib"
+    elif [ -f "$SELF_DIR/../compiler/lib/common.sh" ]; then
+        AICORE_LIB_DIR="$SELF_DIR/../compiler/lib"
+    fi
+fi
+
+# shellcheck disable=SC1091
+. "$AICORE_LIB_DIR/common.sh"
+# shellcheck disable=SC1091
+. "$AICORE_LIB_DIR/json.sh"
+# shellcheck disable=SC1091
+. "$AICORE_LIB_DIR/toolchain.sh"
+# shellcheck disable=SC1091
+. "$AICORE_LIB_DIR/stages.sh"
+# shellcheck disable=SC1091
+. "$AICORE_LIB_DIR/init.sh"
+
+AIC_JSON=0
+AIC_VERBOSE=0
+AIC_PROJECT=""
+AIC_INIT_PACKAGE=""
+AIC_INIT_TEMPLATE="native-xml"
+AIC_INIT_DIR=""
+AIC_INIT_FORCE=0
+AIC_VARIANT="debug"
+AIC_CLEAN_FIRST=0
+AIC_SETUP_PROFILE="minimal"
+
+usage() {
+    cat <<'EOF'
+aic — AICore, the lightweight Android compiler for AiCode
+
+Usage:
+  aic [--project DIR] [--json] [--verbose] <command>
+
+Commands:
+  doctor              Report toolchain (javac, aapt2, d8, zipalign, apksigner)
+  setup [android]     Download components from the AiCode toolchain registry
+  init <name>         Create a native-xml Android project
+  build               Produce a debug APK
+  clean               Delete the project's build/ directory
+  info                Dump resolved project plan
+  template list       List shipped templates
+  sdk list            List platforms / build-tools
+  version             Print engine version
+
+Init flags:
+  --package PKG       Java package (default com.example.<name>)
+  --template ID       Template id (default native-xml)
+  --dir PATH          Output directory
+  --force             Overwrite an existing directory
+  --min-sdk N         Default 24
+  --target-sdk N      Default 34
+  --compile-sdk N     Default 34
+
+Build flags:
+  --variant debug     v1 only supports debug
+  --clean             Clean intermediates before building
+  --release           Refused in v1 (no local release keys)
+
+Exit codes: 0 ok, 1 project/user error, 2 toolchain missing, 130 cancel
+EOF
+}
+
+need_project() {
+    root=""
+    if [ -n "$AIC_PROJECT" ]; then
+        root=$(find_project_root "$AIC_PROJECT" || true)
+    else
+        root=$(find_project_root "$(pwd)" || true)
+    fi
+    [ -n "$root" ] || die AIC_VALIDATE_MISSING "no aicode.json here (pass --project DIR or run aic init)"
+    load_project "$root"
+}
+
+# Parse global + command flags. Unknown flags after the command are per-command.
+CMD=""
+CMD_ARGS=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --json) AIC_JSON=1; shift ;;
+        --verbose|-v) AIC_VERBOSE=1; shift ;;
+        --project)
+            [ "$#" -ge 2 ] || die AIC_VALIDATE_FLAG "--project needs a directory"
+            AIC_PROJECT="$2"; shift 2 ;;
+        --project=*) AIC_PROJECT="${1#--project=}"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        --) shift; break ;;
+        -*)
+            # May belong to the subcommand; stash if CMD already set.
+            if [ -n "$CMD" ]; then
+                CMD_ARGS="$CMD_ARGS $1"
+                if [ "$#" -ge 2 ]; then
+                    case "$2" in
+                        -*) ;;
+                        *) CMD_ARGS="$CMD_ARGS $2"; shift ;;
+                    esac
+                fi
+                shift
+            else
+                die AIC_VALIDATE_FLAG "unknown flag $1"
+            fi
+            ;;
+        *)
+            if [ -z "$CMD" ]; then
+                CMD="$1"
+                shift
+            else
+                CMD_ARGS="$CMD_ARGS $1"
+                shift
+            fi
+            ;;
+    esac
+done
+
+# Re-tokenize CMD_ARGS plus leftover.
+# shellcheck disable=SC2086
+set -- $CMD_ARGS "$@"
+
+parse_init_flags() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --package) AIC_INIT_PACKAGE="$2"; shift 2 ;;
+            --package=*) AIC_INIT_PACKAGE="${1#--package=}"; shift ;;
+            --template) AIC_INIT_TEMPLATE="$2"; shift 2 ;;
+            --template=*) AIC_INIT_TEMPLATE="${1#--template=}"; shift ;;
+            --dir) AIC_INIT_DIR="$2"; shift 2 ;;
+            --dir=*) AIC_INIT_DIR="${1#--dir=}"; shift ;;
+            --force) AIC_INIT_FORCE=1; shift ;;
+            --min-sdk) AIC_INIT_MIN_SDK="$2"; shift 2 ;;
+            --target-sdk) AIC_INIT_TARGET_SDK="$2"; shift 2 ;;
+            --compile-sdk) AIC_INIT_COMPILE_SDK="$2"; shift 2 ;;
+            -*) die AIC_VALIDATE_FLAG "unknown init flag $1" ;;
+            *)
+                if [ -z "${INIT_NAME:-}" ]; then
+                    INIT_NAME="$1"
+                    shift
+                else
+                    die AIC_VALIDATE_FLAG "unexpected argument $1"
+                fi
+                ;;
+        esac
+    done
+}
+
+parse_build_flags() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --variant) AIC_VARIANT="$2"; shift 2 ;;
+            --variant=*) AIC_VARIANT="${1#--variant=}"; shift ;;
+            --clean) AIC_CLEAN_FIRST=1; shift ;;
+            --release) AIC_VARIANT="release"; shift ;;
+            -*) die AIC_VALIDATE_FLAG "unknown build flag $1" ;;
+            *) die AIC_VALIDATE_FLAG "unexpected argument $1" ;;
+        esac
+    done
+}
+
+[ -n "$CMD" ] || { usage; exit 1; }
+
+case "$CMD" in
+    doctor)
+        print_doctor 34
+        ;;
+    setup)
+        target="android"
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --minimal) AIC_SETUP_PROFILE="minimal"; shift ;;
+                --full) AIC_SETUP_PROFILE="full"; shift ;;
+                --profile) AIC_SETUP_PROFILE="$2"; shift 2 ;;
+                -*) die AIC_VALIDATE_FLAG "unknown setup flag $1" ;;
+                *) target="$1"; shift ;;
+            esac
+        done
+        cmd_setup "$target"
+        ;;
+    init)
+        INIT_NAME=""
+        parse_init_flags "$@"
+        cmd_init "${INIT_NAME:-}"
+        ;;
+    build)
+        parse_build_flags "$@"
+        need_project
+        run_build "$AIC_VARIANT" "$AIC_CLEAN_FIRST"
+        ;;
+    clean)
+        need_project
+        cmd_clean
+        ;;
+    info)
+        need_project
+        cmd_info
+        ;;
+    template)
+        sub="${1:-list}"
+        case "$sub" in
+            list) list_templates ;;
+            *) die AIC_VALIDATE_FLAG "usage: aic template list" ;;
+        esac
+        ;;
+    sdk)
+        sub="${1:-list}"
+        case "$sub" in
+            list) cmd_sdk_list ;;
+            *) die AIC_VALIDATE_FLAG "usage: aic sdk list" ;;
+        esac
+        ;;
+    version|--version)
+        if [ "$AIC_JSON" = "1" ]; then
+            printf '{"event":"version","version":"%s"}\n' "$AICORE_VERSION"
+        else
+            printf 'AICore %s\n' "$AICORE_VERSION"
+        fi
+        ;;
+    daemon)
+        die AIC_VALIDATE_FLAG "aic daemon is Phase 3 and not implemented yet"
+        ;;
+    install)
+        die AIC_VALIDATE_FLAG "aic install is Phase 4; copy the debug APK from build/outputs/apk/debug/"
+        ;;
+    *)
+        die AIC_VALIDATE_FLAG "unknown command '$CMD' (try: aic --help)"
+        ;;
+esac

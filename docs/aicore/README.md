@@ -1,7 +1,7 @@
 # AICore — Custom Android Compiler for AiCode
 
-**Status:** PLANNING ONLY. Do not implement until the owner says so.
-**Last updated:** 2026-11-07
+**Status:** Phase 1 implemented (POSIX `aic` orchestrator + backend toolchain registry).
+**Last updated:** 2026-11-08
 **Audience:** any human or agent picking this up cold.
 
 This folder is the handoff package for building a **lightweight, Sketchware-Pro-inspired Android compiler** that lives in AiCode's **Linux box** (PRoot container / remote SSH / InstaBox cloud), not on the user's phone storage and not inside the Android app JVM.

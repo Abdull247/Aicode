@@ -49,6 +49,13 @@ Tap any tool to open its detail page, which shows:
 - The code editor shows a phone icon on `.xml` files: tapping it previews the layout you
   are editing (unsaved edits included), re-rendering as you type.
 
+## Lightweight Android builds (`aic`)
+
+There is no extra agent tool in v1. For small Java + XML apps the AI should run
+`aic` through `Bash` inside the Linux container (`aic init`, `aic build --json`).
+See [AICore](/advanced/aicore-compiler). Prefer that over Gradle unless the
+project needs Kotlin, Compose, or a full Maven graph.
+
 ## GitHub integration
 
 GitHub Read (`github`) and GitHub Write (`githubWrite`) let the AI operate on GitHub directly:

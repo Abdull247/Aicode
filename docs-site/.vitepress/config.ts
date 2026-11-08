@@ -172,6 +172,7 @@ export default defineConfig({
         {
           text: '环境搭建',
           items: [
+            { text: '用 AICore 编译小应用', link: '/advanced/aicore-compiler' },
             { text: '在容器中编译 Android 应用', link: '/advanced/build-android-app' },
             { text: '在容器中编译 Flutter 应用', link: '/advanced/build-flutter-app' },
             { text: '安装 Playwright 浏览器自动化', link: '/advanced/playwright-mcp' }

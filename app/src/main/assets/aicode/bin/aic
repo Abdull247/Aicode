@@ -1,0 +1,12 @@
+#!/bin/sh
+# `aic` — AICore compiler CLI. Lives next to `aicode` (the env installer).
+# Real engine is extracted to ~/.aicode/compiler/ (see ContainerInstaller).
+SELF_DIR=$(dirname "$0")
+[ "${SELF_DIR#/}" = "$SELF_DIR" ] && SELF_DIR="$(pwd)/$SELF_DIR"
+ENGINE="$SELF_DIR/../compiler/aic"
+if [ -x "$ENGINE" ]; then
+    exec sh "$ENGINE" "$@"
+fi
+printf 'aic: AICore engine not installed at %s\n' "$ENGINE" >&2
+printf 'Re-open the terminal so AiCode can extract compiler assets, or copy compiler/ into ~/.aicode/compiler/\n' >&2
+exit 2

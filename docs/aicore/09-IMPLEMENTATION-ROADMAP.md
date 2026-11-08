@@ -10,7 +10,14 @@ Do not start Phase 1 until the owner leaves planning mode. This is the queue.
 - [x] Verify AiCode container, PATH, existing `aicode` CLI, tools, InstaBox, workspace binds
 - [x] Write `docs/aicore/*`
 
-## Phase 1 — First debug APK (the only phase that matters)
+## Phase 1 — First debug APK (LANDED)
+
+- [x] `compiler/` POSIX `aic` orchestrator, stages 0–8, JSONL, native-xml template, testdata/hello
+- [x] Ship via `app/src/main/assets/aicode/bin/aic` + `compiler/`; `ContainerInstaller.extractEnvTool` copies them to `/root/.aicode/`
+- [x] Backend JSON registry + `PUT /api/toolchain/upload` (R2) so `aic setup android` can curl components
+- [ ] First on-device APK still needs JDK + aapt2/d8/android.jar (via `aicode` Android scenario or uploaded R2 artifacts)
+
+## Phase 1 leftover (the only phase that matters)
 
 Acceptance: in a Debian or Alpine aarch64 container with javac + aapt2 + d8 + android.jar,
 

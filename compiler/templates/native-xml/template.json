@@ -1,0 +1,8 @@
+{
+  "id": "native-xml",
+  "title": "Native XML (framework Activity)",
+  "language": "java",
+  "minSdk": 24,
+  "targetSdk": 34,
+  "compileSdk": 34
+}

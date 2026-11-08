@@ -24,9 +24,9 @@
 
 | Topic | Recommendation |
 | --- | --- |
-| Engine language | POSIX sh for Phase 1 APK; Go rewrite once pipeline is proven |
-| compileSdk | 34 (widely cached; 35/36 need matching android.jar) |
-| Minimal SDK tarball | Ship `android.jar` + aarch64 aapt2/d8/zipalign/apksigner in assets if size allows; else require `aicode` Android scenario |
+| Engine language | POSIX sh for Phase 1 (landed). Go rewrite once pipeline is proven |
+| compileSdk | 34 |
+| Minimal SDK tarball | **Not bundled in the APK.** `aic setup android` downloads from AiCodeProBackend / R2. Until artifacts are uploaded, use the existing `aicode` Android scenario. |
 | AppCompat in v1 | No — Hello World on framework to prove the pipeline |
 | Daemon | Not in first PR |
 | Branch | `feat/aicore-compiler` when implementation starts (`CLAUDE.md` branch rules) |
